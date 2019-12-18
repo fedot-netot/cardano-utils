@@ -58,10 +58,10 @@ if [ "$CHANNEL_ID" == "" ]; then
     exit 1
 fi
 
-REPORT=$($REPORT_CMD)
 
 while :;
 do
+REPORT=$($REPORT_CMD)
 echo -e "$POOL_ID\n$REPORT" | \
 curl -X POST https://api.telegram.org/bot$AUTH_TOKEN/sendMessage --data chat_id="$CHANNEL_ID" --data-urlencode text@- || true
 if [ -z $INTERVAL ]; then
