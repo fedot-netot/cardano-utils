@@ -15,14 +15,14 @@ usage: $0 -p -i -a -c -r -h
   -i  Interval in minutes that will be used for regular sending.
       If not specified then send info only once and exit.
   -a  Bot access token. If not specified then environment variable with name \`TELEGRAM_BOT_AUTH_TOKEN\`
-      will be used for authentication.
+      will be used for authentication. If none specified then telegram output will not be used.
   -c  Telegram channel to which send messages. E.g. \`$DEFAULT_CHANNEL_ID\`. If not specified then
       the environment variable \`TELEGRAM_BOT_AUTH_TOKEN\` will be used.
   -r  Command which output will be sent to the log. This is optional parameter.
       If unspecified then the next comand will be used: \`$DEFAULT_REPORT_CMD\`
   -h  Show this help.
 
-This scrip sends stats information of the jormungandr node to the telegram channel via the Telegram Bot.
+This scrip sends stats information of the jormungandr node to stdout and the telegram channel via the Telegram Bot.
 EOF
 }
 
@@ -49,11 +49,11 @@ if [ "$POOL_ID" == "" ]; then
     showHelp
     exit 1
 fi
-if [ "$AUTH_TOKEN" == "" ]; then
-    echo 'You must specify `-a` option or set environment variable `TELEGRAM_BOT_AUTH_TOKEN`'
-    showHelp
-    exit 1
-fi
+# if [ "$AUTH_TOKEN" == "" ]; then
+#     echo 'You must specify `-a` option or set environment variable `TELEGRAM_BOT_AUTH_TOKEN`'
+#     showHelp
+#     exit 1
+# fi
 if [ "$CHANNEL_ID" == "" ]; then
     echo 'You must specify `-c` option or set environment variable `TELEGRAM_CHANNEL_ID`'
     showHelp
@@ -64,8 +64,11 @@ fi
 while :;
 do
 REPORT=$(/bin/sh -c "$REPORT_CMD")
+if [ "$AUTH_TOKEN" != "" ]; then
 echo -e "$POOL_ID\n$REPORT" | \
-curl -X POST https://api.telegram.org/bot$AUTH_TOKEN/sendMessage --data chat_id="$CHANNEL_ID" --data-urlencode text@- || true
+curl --silent --request POST https://api.telegram.org/bot$AUTH_TOKEN/sendMessage --data chat_id="$CHANNEL_ID" --data-urlencode text@- > /dev/null || true
+fi
+echo -e "$POOL_ID\n$REPORT"
 if [ -z $INTERVAL ]; then
     exit 0
 fi
