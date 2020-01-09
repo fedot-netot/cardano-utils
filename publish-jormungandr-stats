@@ -5,7 +5,7 @@ set -e
 # Default channel to publish messages in
 DEFAULT_CHANNEL_ID="@CardanoNodesHeartbeat"
 # Default value of command which output will be sent to the log
-DEFAULT_REPORT_CMD='jcli rest v0 node stats get; echo "\nNeigbors: $(netstat -tnp | grep -E ''ESTABLISHED.+jormungandr'' | cut -c45-65 | sort | uniq | wc -l)"'
+DEFAULT_REPORT_CMD='jcli rest v0 node stats get; echo "\nNeigbors: $(netstat -tnp 2> /dev/null| grep -E ''ESTABLISHED.+jormungandr'' | cut -c45-65 | sort | uniq | wc -l)"'
 
 
 function showHelp() {
