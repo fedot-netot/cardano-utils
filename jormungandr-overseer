@@ -245,12 +245,12 @@ do
         else
             if isCriticalLag $uptime 0 && isCriticalLag ${lastReceivedBlockTime:-$CHECK_DATE} $lastBlockTime; then
                 logWarn "Restarting node because of some block did not received during $CRITICAL_LAG_IN_SEC seconds"
-                logInfo "Uptime $uptime seconds ($(displaytime $uptime))"
+                logInfo "Uptime before restart: $uptime seconds ($(displaytime $uptime))"
                 incrementDowntime
                 restartJormungandr
             elif isCriticalLag $CHECK_DATE ${lastReceivedBlockTime:-$CHECK_DATE} $UNBELIVABLE_TIME_WO_BLOCKS_IN_NET; then
                 logWarn "Restarting node because no one block has been received during last $UNBELIVABLE_TIME_WO_BLOCKS_IN_NET seconds"
-                logInfo "Uptime $uptime seconds ($(displaytime $uptime))"
+                logInfo "Uptime before restart: $uptime seconds ($(displaytime $uptime))"
                 incrementDowntime
                 restartJormungandr
             else
