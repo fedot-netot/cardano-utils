@@ -20,7 +20,7 @@ CRITICAL_LAG_IN_SEC=$DEFAULT_CRITICAL_LAG_IN_SEC
 CHECK_INTERVAL=$DEFAULT_CHECK_INTERVAL
 UNBELIVABLE_TIME_WO_BLOCKS_IN_NET=$DEFAULT_UNBELIVABLE_TIME_WO_BLOCKS_IN_NET
 
-function showHelp() {
+function showHelp {
     cat <<EOF
 usage: $(basename $0) [-i INTERVAL] [-l LAG] [-w LAG_WO_BLOCK] [-L LOG_LEVEL] [-j] [-h]
   -i  The frequency in seconds at which jormungandr health checks will occure.
@@ -58,35 +58,35 @@ function displaytime {
   printf '%d seconds\n' $S
 }
 
-function logError() {
+function logError {
     if (( LOG_LEVEL >= 1  )); then
         (( WITH_JOURNALD )) && echo -n '<3>'
         echo -e "\e[31m$1\e[0m" >&2
     fi
 }
 
-function logWarn() {
+function logWarn {
     if (( LOG_LEVEL >= 2  )); then
         (( WITH_JOURNALD )) && echo -n '<4>'
         echo -e "\e[33m$1\e[0m" >&2
     fi
 }
 
-function logInfo() {
+function logInfo {
     if (( LOG_LEVEL >= 3  )); then
         (( WITH_JOURNALD )) && echo -n '<5>'
         echo -e "\e[1m$1\e[0m"
     fi
 }
 
-function logDebug() {
+function logDebug {
     if (( LOG_LEVEL >= 4  )); then
         (( WITH_JOURNALD )) && echo -n '<6>'
         echo "$1"
     fi
 }
 
-function logTrace() {
+function logTrace {
     if (( LOG_LEVEL >= 5  )); then
         (( WITH_JOURNALD )) && echo -n '<7>'
         echo -e "\e[2m$1\e[0m"
@@ -141,7 +141,7 @@ CHECK_DATE=
 CONNECTIONS=
 
 
-function isCriticalLag() {
+function isCriticalLag {
     local LAST_TIME PREV_TIME LAG MAX_LAG
     LAST_TIME=$1
     PREV_TIME=$2
@@ -155,11 +155,11 @@ function isCriticalLag() {
     return $(( LAG < MAX_LAG ))
 }
 
-function incrementUptime() {
+function incrementUptime {
     (( UPTIME += CHECK_INTERVAL ))
 }
 
-function incrementDowntime() {
+function incrementDowntime {
     (( DOWNTIME += CHECK_INTERVAL ))
 }
 
@@ -168,19 +168,19 @@ function incrementBootstrapDuration {
     (( TOTAL_BOOTSTRAP_DURATION += CHECK_INTERVAL ))
 }
 
-function stopJormungandr() {
+function stopJormungandr {
     systemctl stop jormungandr
 }
 
-function startJormungandr() {
+function startJormungandr {
     systemctl start jormungandr
 }
 
-function restartJormungandr() {
+function restartJormungandr {
     systemctl restart jormungandr
 }
 
-function readJormungandrState() {
+function readJormungandrState {
     local JSON ERR_MSG
     unset state lastBlockTime lastReceivedBlockTime uptime
 
@@ -205,7 +205,7 @@ function isBootstrappingState {
     fi
 }
 
-function logTotal() {
+function logTotal {
     if (( UPTIME == 0 && DOWNTIME == 0 )); then
         return
     fi
@@ -220,7 +220,7 @@ function logTotal() {
     fi
 }
 
-function exit1() {
+function exit1 {
     logTotal
     exit 1
 }
