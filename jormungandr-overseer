@@ -1,0 +1,212 @@
+#!/bin/bash
+
+DEFAULT_CHECK_INTERVAL=10
+DEFAULT_CRITICAL_LAG_IN_SEC=100
+DEFAULT_UNBELIVABLE_TIME_WO_BLOCKS_IN_NET=200
+
+
+WITH_JOURNALD=0
+LOG_LEVEL=3 # 1 - error, 2 - warn, 3 - info, 4 - debug, 5 - trace
+CRITICAL_LAG_IN_SEC=$DEFAULT_CRITICAL_LAG_IN_SEC
+CHECK_INTERVAL=$DEFAULT_CHECK_INTERVAL
+UNBELIVABLE_TIME_WO_BLOCKS_IN_NET=$DEFAULT_UNBELIVABLE_TIME_WO_BLOCKS_IN_NET
+
+function showHelp() {
+    cat <<EOF
+usage: $(basename $0) [-i INTERVAL] [-l LAG] [-w LAG_WO_BLOCK] [-L LOG_LEVEL] [-j] [-h]
+  -i  The frequency in seconds at which jormungandr health checks will occure.
+      If not specified then $DEFAULT_CHECK_INTERVAL seconds interval will be used.
+  -l  Critical lag in seconds. If not defined then default value of $DEFAULT_CRITICAL_LAG_IN_SEC will be used.
+  -w  Count of seconds without blocks in the net that can apear. If our node does not receive blocks during
+      this interval then it will be restarted. Default value - $DEFAULT_UNBELIVABLE_TIME_WO_BLOCKS_IN_NET.
+  -L  Log level: 1 - error; 2 - warn; 3 - info; 4 - debug; 5 - trace
+  -j  Prepare messages for journald severity levels
+  -h  Show this help.
+
+This scrip checks if jormungandr
+EOF
+}
+
+
+function is_number {
+  if [[ "$1" =~ ^[[:digit:]]+$ ]]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+function logError() {
+    if (( LOG_LEVEL >= 1  )); then
+        (( WITH_JOURNALD )) && echo -n '<3>'
+	echo -e "\e[31m$1\e[0m" >&2
+    fi
+}
+
+function logWarn() {
+    if (( LOG_LEVEL >= 2  )); then
+        (( WITH_JOURNALD )) && echo -n '<4>'
+	echo -e "\e[33m$1\e[0m" >&2
+    fi
+}
+
+function logInfo() {
+    if (( LOG_LEVEL >= 3  )); then
+        (( WITH_JOURNALD )) && echo -n '<5>'
+	echo -e "\e[1m$1\e[0m"
+    fi
+}
+
+function logDebug() {
+    if (( LOG_LEVEL >= 4  )); then
+        (( WITH_JOURNALD )) && echo -n '<6>'
+	echo "$1"
+    fi
+}
+
+function logTrace() {
+    if (( LOG_LEVEL >= 5  )); then
+        (( WITH_JOURNALD )) && echo -n '<7>'
+	echo -e "\e[2m$1\e[0m"
+    fi
+}
+
+
+
+while getopts 'i:l:L:w:jh' c
+do
+    case $c in
+	i) CHECK_INTERVAL="$OPTARG" ;;
+	l) if is_number "$OPTARG"; then
+	       CRITICAL_LAG_IN_SEC=$OPTARG
+	   else
+	       echo 'Wrong value for parameter `-l`'
+	       showHelp;
+	       exit 1
+	   fi;;
+        w) if is_number "$OPTARG"; then
+	       UNBELIVABLE_TIME_WO_BLOCKS_IN_NET=$OPTARG
+	   else
+	       echo 'Wrong value for parameter `-w`'
+	       showHelp;
+	       exit 1
+	   fi;;
+	L) case "$OPTARG" in
+	       error) LOG_LEVEL=1;;
+	       warn) LOG_LEVEL=2;;
+	       info) LOG_LEVEL=3;;
+	       debug) LOG_LEVEL=4;;
+	       trace) LOG_LEVEL=5;;
+	       *) echo 'Wrong value for parameter `-L`'; showHelp; exit 1;;
+	   esac;;
+        j) WITH_JOURNALD=1;;
+	h) showHelp; exit 0 ;;
+    esac
+done
+
+
+
+NOW=$(date +%s)
+
+PREV_state=
+PREV_CHECK_DATE=
+
+state=
+lastBlockTime=
+lastReceivedBlockTime=
+uptime=
+CHECK_DATE=
+CONNECTIONS=
+
+
+function isCriticalLag() {
+    local LAST_TIME PREV_TIME LAG MAX_LAG
+    LAST_TIME=$1
+    PREV_TIME=$2
+    MAX_LAG=${3:-$CRITICAL_LAG_IN_SEC}
+    if !(is_number $LAST_TIME && is_number $PREV_TIME); then
+	logError "Not numeric arguments!!!"
+	return 1
+    fi
+    LAG=$(( LAST_TIME - PREV_TIME ))
+    logDebug "LAG=$LAG"
+    return $(( LAG < MAX_LAG ))
+}
+
+function stopJormungandr() {
+    systemctl stop jormungandr
+}
+
+function startJormungandr() {
+    systemctl start jormungandr
+}
+
+function restartJormungandr() {
+    systemctl restart jormungandr
+}
+
+function readJormungandrState() {
+    local JSON ERR_MSG
+    unset state lastBlockTime lastReceivedBlockTime uptime
+
+    eval "$( (jcli rest v0 node stats get --output-format=json) 2> >(ERR_MSG=$(cat); declare -p ERR_MSG) > >(JSON=$(cat); declare -p JSON) )"
+
+    if [ -n "$ERR_MSG" ]; then logError "$ERR_MSG"; fi
+    state=$(echo -n $JSON | jq -r .state)
+    if [ "$state" == "Running" ]; then
+	lastBlockTime=$(date +%s -d$( echo -n "$JSON" | jq -r .lastBlockTime 2>/dev/null) 2>/dev/null)
+	lastReceivedBlockTime=$(date +%s -d$( echo -n "$JSON" | jq -r .lastReceivedBlockTime 2>/dev/null) 2>/dev/null)
+	uptime=$(echo -n "$JSON" | jq -r .uptime 2>/dev/null)
+    fi
+    CONNECTIONS=0
+    CONNECTIONS=$(netstat -tnp 2>/dev/null| grep -E 'ESTABLISHED.+jormungandr' | cut -c45-65 | sort | uniq | wc -l)
+    CHECK_DATE=$(date +%s)
+}
+
+
+while :;
+do
+    readJormungandrState
+    logTrace "state                 =$state"
+    logTrace "lastBlockTime         =$lastBlockTime"
+    logTrace "lastReceivedBlockTime =$lastReceivedBlockTime"
+    logTrace "now                   =$CHECK_DATE"
+    logTrace "uptime                =$uptime"
+
+    if [ -z "$state" ]; then
+	if [ -z "$PREV_CHECK_DATE" ]; then
+	    if is_number "$CONNECTIONS" && [ $CONNECTIONS -gt 0 ]; then
+		logError "Jormungandr is started but not responding or something wrong with our script"
+	    else
+		logWarn "Starting jormungandr because it looking stopped."
+		stopJormungandr
+		startJormungandr
+	    fi;
+	elif isCriticalLag $CHECK_DATE $PREV_CHECK_DATE; then
+	    logWarn "Starting jormungandr because it not responding last $CRITICAL_LAG_IN_SEC seconds."
+	    stopJormungandr
+	    startJormungandr
+	fi
+    elif [ "$state" == "Bootstrapping" ]; then
+	if [ "$PREV_state" != "Bootstrapping" ]; then
+	    logInfo "Bootstraping..."
+        fi
+    elif [ "$state" == "Running" ]; then
+	if [ "$PREV_state" != "Running" ]; then
+	    logInfo "Node is running"
+	else
+	    if isCriticalLag $uptime 0 && isCriticalLag ${lastReceivedBlockTime:-$CHECK_DATE} $lastBlockTime; then
+		logWarn "Restarting node because of some block did not received during $CRITICAL_LAG_IN_SEC seconds"
+		restartJormungandr
+	    elif isCriticalLag $CHECK_DATE ${lastReceivedBlockTime:-$CHECK_DATE} $UNBELIVABLE_TIME_WO_BLOCKS_IN_NET; then
+		logWarn "Restarting node because no one block has been received during last $UNBELIVABLE_TIME_WO_BLOCKS_IN_NET seconds"
+		restartJormungandr
+	    fi
+	fi
+    fi
+
+    PREV_CHECK_DATE=$CHECK_DATE
+    PREV_state=$state
+    
+    sleep "${CHECK_INTERVAL}s"
+done
