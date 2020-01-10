@@ -1,9 +1,15 @@
 #!/bin/bash
 
+trap exit1 TERM INT
+trap logTotal USR1
+
 DEFAULT_CHECK_INTERVAL=10
 DEFAULT_CRITICAL_LAG_IN_SEC=100
 DEFAULT_UNBELIVABLE_TIME_WO_BLOCKS_IN_NET=200
 
+UPTIME=0
+DOWNTIME=0
+CHECK_CYCLES_FROM_START=0
 
 WITH_JOURNALD=0
 LOG_LEVEL=3 # 1 - error, 2 - warn, 3 - info, 4 - debug, 5 - trace
@@ -34,6 +40,19 @@ function is_number {
   else
     return 1
   fi
+}
+
+function displaytime {
+  local T=$1
+  local D=$((T/60/60/24))
+  local H=$((T/60/60%24))
+  local M=$((T/60%60))
+  local S=$((T%60))
+  (( $D > 0 )) && printf '%d days ' $D
+  (( $H > 0 )) && printf '%d hours ' $H
+  (( $M > 0 )) && printf '%d minutes ' $M
+  (( $D > 0 || $H > 0 || $M > 0 )) && printf 'and '
+  printf '%d seconds\n' $S
 }
 
 function logError() {
@@ -133,6 +152,14 @@ function isCriticalLag() {
     return $(( LAG < MAX_LAG ))
 }
 
+function incrementUptime() {
+    (( UPTIME += CHECK_INTERVAL ))
+}
+
+function incrementDowntime() {
+    (( DOWNTIME += CHECK_INTERVAL ))
+}
+
 function stopJormungandr() {
     systemctl stop jormungandr
 }
@@ -163,6 +190,22 @@ function readJormungandrState() {
     CHECK_DATE=$(date +%s)
 }
 
+function logTotal() {
+    if (( UPTIME == 0 && DOWNTIME == 0 )); then
+        return
+    fi
+    local uptime_percent="100.00"
+    if (( DOWNTIME > 0 )); then
+        uptime_percent=$(echo "scale=2; ${UPTIME}/${DOWNTIME} " | bc -l)
+    fi
+
+    logInfo "Total node uptime percent from start of monitoring: $uptime_percent"
+}
+
+function exit1() {
+    logTotal
+    exit 1
+}
 
 while :;
 do
@@ -172,6 +215,10 @@ do
     logTrace "lastReceivedBlockTime =$lastReceivedBlockTime"
     logTrace "now                   =$CHECK_DATE"
     logTrace "uptime                =$uptime"
+
+    if (( CHECK_CYCLES_FROM_START > 0  && ((CHECK_CYCLES_FROM_START * CHECK_INTERVAL) % 3600 == 0) )); then
+        logTotal
+    fi
 
     if [ -z "$state" ]; then
 	if [ -z "$PREV_CHECK_DATE" ]; then
@@ -191,22 +238,30 @@ do
 	if [ "$PREV_state" != "Bootstrapping" ]; then
 	    logInfo "Bootstraping..."
         fi
+        incrementDowntime
     elif [ "$state" == "Running" ]; then
 	if [ "$PREV_state" != "Running" ]; then
 	    logInfo "Node is running"
 	else
 	    if isCriticalLag $uptime 0 && isCriticalLag ${lastReceivedBlockTime:-$CHECK_DATE} $lastBlockTime; then
 		logWarn "Restarting node because of some block did not received during $CRITICAL_LAG_IN_SEC seconds"
+                logInfo "Uptime $uptime seconds ($(displaytime $uptime))"
+                incrementDowntime
 		restartJormungandr
 	    elif isCriticalLag $CHECK_DATE ${lastReceivedBlockTime:-$CHECK_DATE} $UNBELIVABLE_TIME_WO_BLOCKS_IN_NET; then
 		logWarn "Restarting node because no one block has been received during last $UNBELIVABLE_TIME_WO_BLOCKS_IN_NET seconds"
+                logInfo "Uptime $uptime seconds ($(displaytime $uptime))"
+                incrementDowntime
 		restartJormungandr
+            else
+                incrementUptime
 	    fi
 	fi
     fi
 
     PREV_CHECK_DATE=$CHECK_DATE
     PREV_state=$state
-    
+
     sleep "${CHECK_INTERVAL}s"
+    (( CHECK_CYCLES_FROM_START += 1 ))
 done
