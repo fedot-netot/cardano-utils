@@ -10,6 +10,9 @@ DEFAULT_UNBELIVABLE_TIME_WO_BLOCKS_IN_NET=200
 UPTIME=0
 DOWNTIME=0
 CHECK_CYCLES_FROM_START=0
+TOTAL_BOOTSTRAP_DURATION=0
+TOTAL_BOOTSTRAP_COUNT=0
+LAST_BOOTSTRAP_DURATION=0
 
 WITH_JOURNALD=0
 LOG_LEVEL=3 # 1 - error, 2 - warn, 3 - info, 4 - debug, 5 - trace
@@ -160,6 +163,11 @@ function incrementDowntime() {
     (( DOWNTIME += CHECK_INTERVAL ))
 }
 
+function incrementBootstrapDuration {
+    (( LAST_BOOTSTRAP_DURATION += CHECK_INTERVAL ))
+    (( TOTAL_BOOTSTRAP_DURATION += CHECK_INTERVAL ))
+}
+
 function stopJormungandr() {
     systemctl stop jormungandr
 }
@@ -189,6 +197,14 @@ function readJormungandrState() {
     CHECK_DATE=$(date +%s)
 }
 
+function isBootstrappingState {
+    if [ "$1" == "Bootstrapping" ] || [ "$1"=="PreparingBlock0" ]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
 function logTotal() {
     if (( UPTIME == 0 && DOWNTIME == 0 )); then
         return
@@ -199,6 +215,9 @@ function logTotal() {
     fi
 
     logInfo "Total node uptime percent from start of monitoring: $uptime_percent"
+    if (( TOTAL_BOOTSTRAP_COUNT > 0 )); then
+        logInfo "Average bootstrap duration: $(displaytime $(( TOTAL_BOOTSTRAP_DURATION / TOTAL_BOOTSTRAP_COUNT )))"
+    fi
 }
 
 function exit1() {
@@ -233,13 +252,18 @@ do
             stopJormungandr
             startJormungandr
         fi
-    elif [ "$state" == "Bootstrapping" ]; then
-        if [ "$PREV_state" != "Bootstrapping" ]; then
+    elif isBootstrappingState $state; then
+        if ! isBootstrappingState $PREV_state; then
             logInfo "Bootstraping..."
+            (( TOTAL_BOOTSTRAP_COUNT++ ))
         fi
+        incrementBootstrapDuration
         incrementDowntime
     elif [ "$state" == "Running" ]; then
-        if [ "$PREV_state" != "Running" ]; then
+        if [ "$PREV_state" == "Bootstrapping" ]; then
+            incrementBootstrapDuration
+            logInfo "Node bootstraped in $LAST_BOOTSTRAP_DURATION seconds ($(displaytime $LAST_BOOTSTRAP_DURATION))"
+        elif [ "$PREV_state" != "Running" ]; then
             logInfo "Node is running"
         else
             if isCriticalLag $uptime 0 && isCriticalLag ${lastReceivedBlockTime:-$CHECK_DATE} $lastBlockTime; then
