@@ -35,12 +35,12 @@ AUTH_TOKEN=$TELEGRAM_BOT_AUTH_TOKEN
 while getopts 'p:r:i:a:c:h' c
 do
     case $c in
-	p) POOL_ID="$OPTARG" ;;
-	r) REPORT_CMD="$OPTARG" ;;
-	i) INTERVAL="$OPTARG" ;;
-	a) AUTH_TOKEN="$OPTARG" ;;
-	c) CHANNEL_ID="$OPTARG" ;;
-	h) showHelp; exit 0 ;;
+        p) POOL_ID="$OPTARG" ;;
+        r) REPORT_CMD="$OPTARG" ;;
+        i) INTERVAL="$OPTARG" ;;
+        a) AUTH_TOKEN="$OPTARG" ;;
+        c) CHANNEL_ID="$OPTARG" ;;
+        h) showHelp; exit 0 ;;
     esac
 done
 
