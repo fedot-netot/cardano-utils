@@ -7,24 +7,36 @@ trap logTotal USR1
 DEFAULT_CHECK_INTERVAL=10
 DEFAULT_CRITICAL_LAG_IN_SEC=100
 DEFAULT_UNBELIVABLE_TIME_WO_BLOCKS_IN_NET=200
+DEFAULT_REPORT_INTERVAL=1
 
 START_TIME=$(date +%s)
+LAST_REPORT_PERIOD_START=$START_TIME
 UPTIME=0
 DOWNTIME=0
+REPORT_PERIOD_UPTIME=0
+REPORT_PERIOD_DOWNTIME=0
 CHECK_CYCLES_FROM_START=0
 TOTAL_BOOTSTRAP_DURATION=0
 TOTAL_BOOTSTRAP_COUNT=0
+TOTAL_UPTIME_DURATION=0
+TOTAL_UPTIME_COUNT=0
 LAST_BOOTSTRAP_DURATION=0
+JUST_RESTARTED=0
+LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_COUNT=0
+LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_DURATION=0
+LAST_REPORT_PERIOD_TOTAL_UPTIME_DURATION=0
+LAST_REPORT_PERIOD_TOTAL_UPTIME_COUNT=0
 
 WITH_JOURNALD=0
 LOG_LEVEL=3 # 1 - error, 2 - warn, 3 - info, 4 - debug, 5 - trace
 CRITICAL_LAG_IN_SEC=$DEFAULT_CRITICAL_LAG_IN_SEC
 CHECK_INTERVAL=$DEFAULT_CHECK_INTERVAL
 UNBELIVABLE_TIME_WO_BLOCKS_IN_NET=$DEFAULT_UNBELIVABLE_TIME_WO_BLOCKS_IN_NET
+REPORT_INTERVAL=$DEFAULT_REPORT_INTERVAL
 
 function showHelp {
     cat <<EOF
-usage: $(basename $0) [-i INTERVAL] [-l LAG] [-w LAG_WO_BLOCK] [-L LOG_LEVEL] [-j] [-h]
+usage: $(basename $0) [-i INTERVAL] [-l LAG] [-w LAG_WO_BLOCK] [-L LOG_LEVEL] [-r INTERVAL] [-j] [-h]
   -i  The frequency in seconds at which jormungandr health checks will occure.
       If not specified then $DEFAULT_CHECK_INTERVAL seconds interval will be used.
   -l  Critical lag in seconds. If not defined then default value of $DEFAULT_CRITICAL_LAG_IN_SEC will be used.
@@ -32,6 +44,7 @@ usage: $(basename $0) [-i INTERVAL] [-l LAG] [-w LAG_WO_BLOCK] [-L LOG_LEVEL] [-
       this interval then it will be restarted. Default value - $DEFAULT_UNBELIVABLE_TIME_WO_BLOCKS_IN_NET.
   -L  Log level: 1 - error; 2 - warn; 3 - info; 4 - debug; 5 - trace
   -j  Prepare messages for journald severity levels
+  -r  Report inteval in hours
   -h  Show this help.
 
 This scrip checks if jormungandr
@@ -49,15 +62,22 @@ function is_number {
 
 function displaytime {
   local T=$1
+  local always_show_seconds=${2:-"yes"}
   local D=$((T/60/60/24))
   local H=$((T/60/60%24))
   local M=$((T/60%60))
   local S=$((T%60))
-  (( $D > 0 )) && printf '%d days ' $D
-  (( $H > 0 )) && printf '%d hours ' $H
-  (( $M > 0 )) && printf '%d minutes ' $M
-  (( $D > 0 || $H > 0 || $M > 0 )) && printf 'and '
-  printf '%d seconds\n' $S
+  (( $D == 1 )) && printf '%d day ' $D
+  (( $D >  1 )) && printf '%d days ' $D
+  (( $H == 1 )) && printf '%d hour ' $H
+  (( $H >  1 )) && printf '%d hours ' $H
+  (( $M == 1 )) && printf '%d minute ' $M
+  (( $M >  1 )) && printf '%d minutes ' $M
+  if [ "$always_show_seconds" == "yes" ] || (( $S > 0 )); then
+      (( $D > 0 || $H > 0 || $M > 0 )) && printf 'and '
+      (( $S == 1 )) && printf '%d second' $S
+      (( $S != 1 )) && printf '%d seconds' $S
+  fi
 }
 
 function logError {
@@ -128,6 +148,13 @@ do
                *) echo 'Wrong value for parameter `-L`'; showHelp; exit 1;;
            esac;;
         j) WITH_JOURNALD=1;;
+        r) if is_number "$OPTARG"; then
+               REPORT_INTERVAL=$OPTARG
+           else
+               echo 'Wrong value for parameter `-r`'
+               showHelp;
+               exit 1
+           fi;;
         h) showHelp; exit 0 ;;
     esac
 done
@@ -163,15 +190,26 @@ function isCriticalLag {
 
 function incrementUptime {
     (( UPTIME += CHECK_INTERVAL ))
+    (( REPORT_PERIOD_UPTIME += CHECK_INTERVAL ))
 }
 
 function incrementDowntime {
     (( DOWNTIME += CHECK_INTERVAL ))
+    (( REPORT_PERIOD_DOWNTIME += CHECK_INTERVAL ))
 }
 
 function incrementBootstrapDuration {
     (( LAST_BOOTSTRAP_DURATION += CHECK_INTERVAL ))
     (( TOTAL_BOOTSTRAP_DURATION += CHECK_INTERVAL ))
+    (( LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_DURATION += CHECK_INTERVAL ))
+}
+
+function incrementUptimeDuration {
+    (( TOTAL_UPTIME_COUNT++ ))
+    (( LAST_REPORT_PERIOD_TOTAL_UPTIME_COUNT++ ))
+    (( LAST_UPTIME_DURATION += uptime ))
+    (( TOTAL_UPTIME_DURATION += uptime ))
+    (( LAST_REPORT_PERIOD_TOTAL_UPTIME_DURATION += uptime ))
 }
 
 function stopJormungandr {
@@ -225,7 +263,7 @@ function logTotal {
     fi
     local uptime_percent
     if (( DOWNTIME > 0 )); then
-        uptime_percent=$(echo "scale=2; ${UPTIME:-0}/${DOWNTIME} " | bc -l)
+        uptime_percent=$(echo "scale=2; ${UPTIME:-0}*100/(${UPTIME:-0} + ${DOWNTIME}) " | bc -l)
     elif (( UPTIME > 0 )); then
         uptime_percent="100.00"
     else
@@ -233,15 +271,54 @@ function logTotal {
     fi
 
     local now=$(date +%s)
-    logNotice "Total monitoring duration is $(displaytime $(( now - START_TIME )))"
-    logNotice "Total percentage of time during witch the node was RUNNING: $uptime_percent"
-    if (( TOTAL_BOOTSTRAP_COUNT > 1 )); then
-        logNotice "There were $TOTAL_BOOTSTRAP_COUNT bootstraps with an average duration of each $(displaytime $(( TOTAL_BOOTSTRAP_DURATION / TOTAL_BOOTSTRAP_COUNT )))"
-    elif (( TOTAL_BOOTSTRAP_COUNT == 1 )); then
-        logNotice "There was 1 bootstrap with duration of $(displaytime $TOTAL_BOOTSTRAP_DURATION)"
-    else
-        logNotice "There were no bootstraps"
+    logNotice "Total statistics since overseer started:"
+    logNotice "  time elapsed:               $(displaytime $(( now - START_TIME )))"
+    logNotice "  node was running:           ${uptime_percent}% of time"
+    if (( TOTAL_UPTIME_COUNT > 1 )); then
+    logNotice "  average uptime duration:    $(displaytime $(( TOTAL_UPTIME_DURATION / TOTAL_UPTIME_COUNT )))"
+    elif [ -n "$uptime" ] && (( uptime > 0 )); then
+    logNotice "  single uptime duration:     $(displaytime $(( uptime )))"
     fi
+    logNotice "  node was bootstrapped:      $TOTAL_BOOTSTRAP_COUNT time(s)"
+    if (( TOTAL_BOOTSTRAP_COUNT > 1 )); then
+    logNotice "  average bootstrap duration: $(displaytime $(( TOTAL_BOOTSTRAP_DURATION / TOTAL_BOOTSTRAP_COUNT )))"
+    fi
+}
+
+function logLastPeriod {
+    local uptime_percent
+    if (( REPORT_PERIOD_DOWNTIME > 0 )); then
+        uptime_percent=$(echo "scale=2; ${REPORT_PERIOD_UPTIME:-0}*100/(${REPORT_PERIOD_UPTIME:-0} + ${REPORT_PERIOD_DOWNTIME}) " | bc -l)
+    elif (( UPTIME > 0 )); then
+        uptime_percent="100.00"
+    else
+        uptime_percent="0"
+    fi
+
+    local now=$(date +%s)
+    if (( REPORT_INTERVAL == 1 )); then
+        logNotice "Statistics for the last hour:"
+    else
+        logNotice "Statistics for the last $REPORT_INTERVAL hours:"
+    fi
+    logNotice "  node was running:           ${uptime_percent}% of time"
+    if (( LAST_REPORT_PERIOD_TOTAL_UPTIME_COUNT > 1 )); then
+    logNotice "  average uptime duration:    $(displaytime $(( LAST_REPORT_PERIOD_TOTAL_UPTIME_DURATION / LAST_REPORT_PERIOD_TOTAL_UPTIME_COUNT )))"
+    elif [ -n "$uptime" ] && (( uptime > 0 )); then
+    logNotice "  single uptime duration:     $(displaytime $(( uptime )))"
+    fi
+    logNotice "  node was bootstrapped:      $LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_COUNT time(s)"
+    if (( LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_COUNT > 1 )); then
+    logNotice "  average bootstrap duration: $(displaytime $(( LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_DURATION / LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_COUNT )))"
+    fi
+
+    (( LAST_REPORT_PERIOD_START = CHECK_DATE ))
+    (( LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_COUNT = 0 ))
+    (( LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_DURATION = 0 ))
+    (( REPORT_PERIOD_UPTIME = 0 ))
+    (( REPORT_PERIOD_DOWNTIME = 0 ))
+    (( LAST_REPORT_PERIOD_TOTAL_UPTIME_COUNT = 0 ))
+    (( LAST_REPORT_PERIOD_TOTAL_UPTIME_DURATION = 0 ))
 }
 
 function exit1 {
@@ -256,6 +333,8 @@ function exit1_ {
 
 while :;
 do
+    just_restarted=$JUST_RESTARTED
+    (( JUST_RESTARTED = 0 ))
     readJormungandrState
     logTrace "state                 =$state"
     logTrace "lastBlockTime         =$lastBlockTime"
@@ -264,7 +343,8 @@ do
     logTrace "uptime                =$uptime"
     logTrace "CONNECTIONS           =$CONNECTIONS"
 
-    if (( CHECK_CYCLES_FROM_START > 0  && ((CHECK_CYCLES_FROM_START * CHECK_INTERVAL) % 3600 == 0) )); then
+    if (( (CHECK_DATE - LAST_REPORT_PERIOD_START) >= (REPORT_INTERVAL*3600) )); then
+        logLastPeriod
         logTotal
     fi
 
@@ -284,28 +364,39 @@ do
         fi
     elif isBootstrappingState $state; then
         if ! isBootstrappingState $PREV_state; then
-            logInfo "Bootstraping..."
+            if (( just_restarted )); then
+                logInfo "Bootstrapping..."
+            else
+                logNotice "Bootstrapping..."
+            fi
             (( TOTAL_BOOTSTRAP_COUNT++ ))
+            (( LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_COUNT++ ))
         fi
         incrementBootstrapDuration
         incrementDowntime
     elif isRunningState $state; then
         if isBootstrappingState $PREV_state; then
             incrementBootstrapDuration
-            logInfo "Node bootstraped in $LAST_BOOTSTRAP_DURATION seconds ($(displaytime $LAST_BOOTSTRAP_DURATION))"
+            logNotice "Node bootstrapped in $(displaytime $LAST_BOOTSTRAP_DURATION)"
         elif ! isRunningState $PREV_state; then
-            logInfo "Node is running"
+            logNotice "Node is running"
         else
             if isCriticalLag $uptime 0 && isCriticalLag ${lastReceivedBlockTime:-$CHECK_DATE} $lastBlockTime; then
-                logWarn "Restarting node because of some block did not received during $CRITICAL_LAG_IN_SEC seconds"
+                logWarn "Restarting node because of some blocks did not received during $CRITICAL_LAG_IN_SEC seconds"
                 logInfo "Uptime before restart: $uptime seconds ($(displaytime $uptime))"
                 incrementDowntime
-                restartJormungandr
+                incrementUptimeDuration
+                if restartJormungandr; then
+                    (( JUST_RESTARTED = 1 ))
+                fi
             elif isCriticalLag $CHECK_DATE ${lastReceivedBlockTime:-$CHECK_DATE} $UNBELIVABLE_TIME_WO_BLOCKS_IN_NET; then
                 logWarn "Restarting node because no one block has been received during last $UNBELIVABLE_TIME_WO_BLOCKS_IN_NET seconds"
                 logInfo "Uptime before restart: $uptime seconds ($(displaytime $uptime))"
                 incrementDowntime
-                restartJormungandr
+                incrementUptimeDuration
+                if restartJormungandr; then
+                    (( JUST_RESTARTED = 1 ))
+                fi
             else
                 incrementUptime
             fi
