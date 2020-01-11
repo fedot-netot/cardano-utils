@@ -1,12 +1,14 @@
 #!/bin/bash
 
-trap exit1 TERM INT
+trap exit1 TERM
+trap exit1_ INT
 trap logTotal USR1
 
 DEFAULT_CHECK_INTERVAL=10
 DEFAULT_CRITICAL_LAG_IN_SEC=100
 DEFAULT_UNBELIVABLE_TIME_WO_BLOCKS_IN_NET=200
 
+START_TIME=$(date +%s)
 UPTIME=0
 DOWNTIME=0
 CHECK_CYCLES_FROM_START=0
@@ -72,25 +74,29 @@ function logWarn {
     fi
 }
 
-function logInfo {
+function logNotice {
     if (( LOG_LEVEL >= 3  )); then
         (( WITH_JOURNALD )) && echo -n '<5>'
         echo -e "\e[1m$1\e[0m"
     fi
 }
 
-function logDebug {
-    if (( LOG_LEVEL >= 4  )); then
+function logInfo {
+    if (( LOG_LEVEL >= 3  )); then
         (( WITH_JOURNALD )) && echo -n '<6>'
-        echo "$1"
+        echo -e "$1"
     fi
 }
 
-function logTrace {
+function logDebug {
     if (( LOG_LEVEL >= 5  )); then
         (( WITH_JOURNALD )) && echo -n '<7>'
         echo -e "\e[2m$1\e[0m"
     fi
+}
+
+function logTrace {
+    logDebug $1
 }
 
 
@@ -180,6 +186,22 @@ function restartJormungandr {
     systemctl restart jormungandr
 }
 
+function isBootstrappingState {
+    if [ "$1" == "Bootstrapping" ] || [ "$1" == "PreparingBlock0" ]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+function isRunningState {
+    if [ "$1" == "Running" ]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
 function readJormungandrState {
     local JSON ERR_MSG
     unset state lastBlockTime lastReceivedBlockTime uptime
@@ -188,7 +210,7 @@ function readJormungandrState {
 
     if [ -n "$ERR_MSG" ]; then logError "$ERR_MSG"; fi
     state=$(echo -n $JSON | jq -r .state)
-    if [ "$state" == "Running" ]; then
+    if isRunningState $state; then
         lastBlockTime=$(date +%s -d$( echo -n "$JSON" | jq -r .lastBlockTime 2>/dev/null) 2>/dev/null)
         lastReceivedBlockTime=$(date +%s -d$( echo -n "$JSON" | jq -r .lastReceivedBlockTime 2>/dev/null) 2>/dev/null)
         uptime=$(echo -n "$JSON" | jq -r .uptime 2>/dev/null)
@@ -197,32 +219,39 @@ function readJormungandrState {
     CHECK_DATE=$(date +%s)
 }
 
-function isBootstrappingState {
-    if [ "$1" == "Bootstrapping" ] || [ "$1"=="PreparingBlock0" ]; then
-        return 0
-    else
-        return 1
-    fi
-}
-
 function logTotal {
     if (( UPTIME == 0 && DOWNTIME == 0 )); then
         return
     fi
-    local uptime_percent="100.00"
+    local uptime_percent
     if (( DOWNTIME > 0 )); then
-        uptime_percent=$(echo "scale=2; ${UPTIME}/${DOWNTIME} " | bc -l)
+        uptime_percent=$(echo "scale=2; ${UPTIME:-0}/${DOWNTIME} " | bc -l)
+    elif (( UPTIME > 0 )); then
+        uptime_percent="100.00"
+    else
+        uptime_percent="0"
     fi
 
-    logInfo "Total node uptime percent from start of monitoring: $uptime_percent"
-    if (( TOTAL_BOOTSTRAP_COUNT > 0 )); then
-        logInfo "Average bootstrap duration: $(displaytime $(( TOTAL_BOOTSTRAP_DURATION / TOTAL_BOOTSTRAP_COUNT )))"
+    local now=$(date +%s)
+    logNotice "Total monitoring duration is $(displaytime $(( now - START_TIME )))"
+    logNotice "Total percentage of time during witch the node was RUNNING: $uptime_percent"
+    if (( TOTAL_BOOTSTRAP_COUNT > 1 )); then
+        logNotice "There were $TOTAL_BOOTSTRAP_COUNT bootstraps with an average duration of each $(displaytime $(( TOTAL_BOOTSTRAP_DURATION / TOTAL_BOOTSTRAP_COUNT )))"
+    elif (( TOTAL_BOOTSTRAP_COUNT == 1 )); then
+        logNotice "There was 1 bootstrap with duration of $(displaytime $TOTAL_BOOTSTRAP_DURATION)"
+    else
+        logNotice "There were no bootstraps"
     fi
 }
 
 function exit1 {
     logTotal
     exit 1
+}
+
+function exit1_ {
+    echo
+    exit1
 }
 
 while :;
@@ -233,6 +262,7 @@ do
     logTrace "lastReceivedBlockTime =$lastReceivedBlockTime"
     logTrace "now                   =$CHECK_DATE"
     logTrace "uptime                =$uptime"
+    logTrace "CONNECTIONS           =$CONNECTIONS"
 
     if (( CHECK_CYCLES_FROM_START > 0  && ((CHECK_CYCLES_FROM_START * CHECK_INTERVAL) % 3600 == 0) )); then
         logTotal
@@ -259,11 +289,11 @@ do
         fi
         incrementBootstrapDuration
         incrementDowntime
-    elif [ "$state" == "Running" ]; then
-        if [ "$PREV_state" == "Bootstrapping" ]; then
+    elif isRunningState $state; then
+        if isBootstrappingState $PREV_state; then
             incrementBootstrapDuration
             logInfo "Node bootstraped in $LAST_BOOTSTRAP_DURATION seconds ($(displaytime $LAST_BOOTSTRAP_DURATION))"
-        elif [ "$PREV_state" != "Running" ]; then
+        elif ! isRunningState $PREV_state; then
             logInfo "Node is running"
         else
             if isCriticalLag $uptime 0 && isCriticalLag ${lastReceivedBlockTime:-$CHECK_DATE} $lastBlockTime; then
