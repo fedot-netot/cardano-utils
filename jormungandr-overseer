@@ -280,6 +280,7 @@ do
                 incrementUptime
             fi
         fi
+        (( LAST_BOOTSTRAP_DURATION = 0 ))
     fi
 
     PREV_CHECK_DATE=$CHECK_DATE
