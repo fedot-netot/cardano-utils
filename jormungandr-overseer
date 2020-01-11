@@ -43,8 +43,8 @@ usage: $(basename $0) [-i INTERVAL] [-l LAG] [-w LAG_WO_BLOCK] [-L LOG_LEVEL] [-
   -w  Count of seconds without blocks in the net that can apear. If our node does not receive blocks during
       this interval then it will be restarted. Default value - $DEFAULT_UNBELIVABLE_TIME_WO_BLOCKS_IN_NET.
   -L  Log level: 1 - error; 2 - warn; 3 - info; 4 - debug; 5 - trace
-  -j  Prepare messages for journald severity levels
-  -r  Report inteval in hours
+  -j  Prepare messages for journald severity levels.
+  -r  Report inteval in hours.
   -h  Show this help.
 
 This scrip checks if jormungandr
@@ -90,7 +90,7 @@ function logError {
 function logWarn {
     if (( LOG_LEVEL >= 2  )); then
         (( WITH_JOURNALD )) && echo -n '<4>'
-        echo -e "\e[33m$1\e[0m" >&2
+        echo -e "\e[93m$1\e[0m" >&2
     fi
 }
 
@@ -121,21 +121,21 @@ function logTrace {
 
 
 
-while getopts 'i:l:L:w:jh' c
+while getopts 'i:l:L:w:r:jh' c
 do
     case $c in
         i) CHECK_INTERVAL="$OPTARG" ;;
         l) if is_number "$OPTARG"; then
                CRITICAL_LAG_IN_SEC=$OPTARG
            else
-               echo 'Wrong value for parameter `-l`'
+               echo 'Wrong value for option `-l`'
                showHelp;
                exit 1
            fi;;
         w) if is_number "$OPTARG"; then
                UNBELIVABLE_TIME_WO_BLOCKS_IN_NET=$OPTARG
            else
-               echo 'Wrong value for parameter `-w`'
+               echo 'Wrong value for option `-w`'
                showHelp;
                exit 1
            fi;;
@@ -145,13 +145,13 @@ do
                info) LOG_LEVEL=3;;
                debug) LOG_LEVEL=4;;
                trace) LOG_LEVEL=5;;
-               *) echo 'Wrong value for parameter `-L`'; showHelp; exit 1;;
+               *) echo 'Wrong value for option `-L`'; showHelp; exit 1;;
            esac;;
         j) WITH_JOURNALD=1;;
         r) if is_number "$OPTARG"; then
                REPORT_INTERVAL=$OPTARG
            else
-               echo 'Wrong value for parameter `-r`'
+               echo 'Wrong value for option `-r`'
                showHelp;
                exit 1
            fi;;
@@ -377,7 +377,7 @@ do
     elif isRunningState $state; then
         if isBootstrappingState $PREV_state; then
             incrementBootstrapDuration
-            logNotice "Node bootstrapped in $(displaytime $LAST_BOOTSTRAP_DURATION)"
+            logNotice "Node bootstrapped in $LAST_BOOTSTRAP_DURATION seconds ($(displaytime $LAST_BOOTSTRAP_DURATION))"
         elif ! isRunningState $PREV_state; then
             logNotice "Node is running"
         else
