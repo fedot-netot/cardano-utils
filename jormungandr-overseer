@@ -344,8 +344,8 @@ do
     logTrace "CONNECTIONS           =$CONNECTIONS"
 
     if (( (CHECK_DATE - LAST_REPORT_PERIOD_START) >= (REPORT_INTERVAL*3600) )); then
-        logLastPeriod
         logTotal
+        logLastPeriod
     fi
 
     if [ -z "$state" ]; then
