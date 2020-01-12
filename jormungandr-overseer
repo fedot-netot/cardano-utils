@@ -26,6 +26,11 @@ LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_COUNT=0
 LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_DURATION=0
 LAST_REPORT_PERIOD_TOTAL_UPTIME_DURATION=0
 LAST_REPORT_PERIOD_TOTAL_UPTIME_COUNT=0
+TOTAL_CONNECTIONS=0
+TOTAL_CONNECTIONS_COUNT=0
+LAST_REPORT_PERIOD_TOTAL_CONNECTIONS=0
+LAST_REPORT_PERIOD_TOTAL_CONNECTIONS_COUNT=0
+
 
 WITH_JOURNALD=0
 LOG_LEVEL=3 # 1 - error, 2 - warn, 3 - info, 4 - debug, 5 - trace
@@ -212,6 +217,15 @@ function incrementUptimeDuration {
     (( LAST_REPORT_PERIOD_TOTAL_UPTIME_DURATION += uptime ))
 }
 
+function incrementConnectionStatistic {
+    if is_number "$CONNECTIONS"; then
+        (( TOTAL_CONNECTIONS_COUNT += 1 ))
+        (( TOTAL_CONNECTIONS += CONNECTIONS ))
+        (( LAST_REPORT_PERIOD_TOTAL_CONNECTIONS_COUNT += 1 ))
+        (( LAST_REPORT_PERIOD_TOTAL_CONNECTIONS += CONNECTIONS ))
+    fi
+}
+
 function stopJormungandr {
     systemctl stop jormungandr
 }
@@ -283,6 +297,9 @@ function logTotal {
     if (( TOTAL_BOOTSTRAP_COUNT > 1 )); then
     logNotice "  average bootstrap duration: $(displaytime $(( TOTAL_BOOTSTRAP_DURATION / TOTAL_BOOTSTRAP_COUNT )))"
     fi
+    if (( TOTAL_CONNECTIONS_COUNT > 1 )); then
+    logNotice "  average neighbors count:    $(( TOTAL_CONNECTIONS / TOTAL_CONNECTIONS_COUNT ))"
+    fi
 }
 
 function logLastPeriod {
@@ -311,6 +328,9 @@ function logLastPeriod {
     if (( LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_COUNT > 1 )); then
     logNotice "  average bootstrap duration: $(displaytime $(( LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_DURATION / LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_COUNT )))"
     fi
+    if (( LAST_REPORT_PERIOD_TOTAL_CONNECTIONS_COUNT > 1 )); then
+    logNotice "  average neighbors count:    $(( LAST_REPORT_PERIOD_TOTAL_CONNECTIONS / LAST_REPORT_PERIOD_TOTAL_CONNECTIONS_COUNT ))"
+    fi
 
     (( LAST_REPORT_PERIOD_START = CHECK_DATE ))
     (( LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_COUNT = 0 ))
@@ -319,6 +339,8 @@ function logLastPeriod {
     (( REPORT_PERIOD_DOWNTIME = 0 ))
     (( LAST_REPORT_PERIOD_TOTAL_UPTIME_COUNT = 0 ))
     (( LAST_REPORT_PERIOD_TOTAL_UPTIME_DURATION = 0 ))
+    (( LAST_REPORT_PERIOD_TOTAL_CONNECTIONS_COUNT = 0 ))
+    (( LAST_REPORT_PERIOD_TOTAL_CONNECTIONS = 0 ))
 }
 
 function exit1 {
@@ -375,6 +397,7 @@ do
         incrementBootstrapDuration
         incrementDowntime
     elif isRunningState $state; then
+        incrementConnectionStatistic
         if isBootstrappingState $PREV_state; then
             incrementBootstrapDuration
             logNotice "Node bootstrapped in $LAST_BOOTSTRAP_DURATION seconds ($(displaytime $LAST_BOOTSTRAP_DURATION))"
