@@ -298,7 +298,7 @@ function logTotal {
     logNotice "  single uptime duration:     $(displaytime $(( uptime )))"
     fi
     logNotice "  node was bootstrapped:      $TOTAL_BOOTSTRAP_COUNT time(s)"
-    if (( TOTAL_BOOTSTRAP_COUNT > 1 )); then
+    if (( TOTAL_BOOTSTRAP_COUNT > 0 )); then
     logNotice "  average bootstrap duration: $(displaytime $(( TOTAL_BOOTSTRAP_DURATION / TOTAL_BOOTSTRAP_COUNT )))"
     fi
     if (( TOTAL_CONNECTIONS_COUNT > 1 )); then
@@ -329,7 +329,7 @@ function logLastPeriod {
     logNotice "  single uptime duration:     $(displaytime $(( uptime )))"
     fi
     logNotice "  node was bootstrapped:      $LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_COUNT time(s)"
-    if (( LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_COUNT > 1 )); then
+    if (( LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_COUNT > 0 )); then
     logNotice "  average bootstrap duration: $(displaytime $(( LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_DURATION / LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_COUNT )))"
     fi
     if (( LAST_REPORT_PERIOD_TOTAL_CONNECTIONS_COUNT > 1 )); then
