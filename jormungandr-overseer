@@ -4,6 +4,10 @@ trap exit1 TERM
 trap exit1_ INT
 trap logTotal USR1
 
+JORMUNGANDR_START_CMD=${JORMUNGANDR_START_CMD:-"systemctl start jormungandr.service"}
+JORMUNGANDR_STOP_CMD=${JORMUNGANDR_STOP_CMD:-"systemctl stop jormungandr.service"}
+JORMUNGANDR_RESTART_CMD=${JORMUNGANDR_RESTART_CMD:-"systemctl restart jormungandr.service"}
+
 DEFAULT_CHECK_INTERVAL=10
 DEFAULT_CRITICAL_LAG_IN_SEC=100
 DEFAULT_UNBELIVABLE_TIME_WO_BLOCKS_IN_NET=200
@@ -227,15 +231,15 @@ function incrementConnectionStatistic {
 }
 
 function stopJormungandr {
-    systemctl stop jormungandr
+    eval "$JORMUNGANDR_STOP_CMD"
 }
 
 function startJormungandr {
-    systemctl start jormungandr
+    eval "$JORMUNGANDR_START_CMD"
 }
 
 function restartJormungandr {
-    systemctl restart jormungandr
+    eval "$JORMUNGANDR_RESTART_CMD"
 }
 
 function isBootstrappingState {
