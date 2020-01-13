@@ -362,12 +362,12 @@ do
     just_restarted=$JUST_RESTARTED
     (( JUST_RESTARTED = 0 ))
     readJormungandrState
-    logTrace "state                 =$state"
-    logTrace "lastBlockTime         =$lastBlockTime"
-    logTrace "lastReceivedBlockTime =$lastReceivedBlockTime"
-    logTrace "now                   =$CHECK_DATE"
-    logTrace "uptime                =$uptime"
-    logTrace "CONNECTIONS           =$CONNECTIONS"
+    logTrace "state                 : $state"
+    logTrace "lastBlockTime         : $lastBlockTime"
+    logTrace "lastReceivedBlockTime : $lastReceivedBlockTime"
+    logTrace "now                   : $CHECK_DATE"
+    logTrace "uptime                : $uptime"
+    logTrace "CONNECTIONS           : $CONNECTIONS"
 
     if (( (CHECK_DATE - LAST_REPORT_PERIOD_START) >= (REPORT_INTERVAL*3600) )); then
         logTotal
