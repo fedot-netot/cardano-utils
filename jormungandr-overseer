@@ -429,9 +429,13 @@ do
             fi
         fi
         (( LAST_BOOTSTRAP_DURATION = 0 ))
+    else
+        logError "Unknown node state: $state"
     fi
 
-    PREV_CHECK_DATE=$CHECK_DATE
+    if isRunningState $state || isBootstrappingState $state; then
+        PREV_CHECK_DATE=$CHECK_DATE
+    fi
     PREV_state=$state
 
     sleep "${CHECK_INTERVAL}s"
