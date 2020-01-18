@@ -1,6 +1,5 @@
 #! /bin/sh
 
-set -e
 
 # Default channel to publish messages in
 DEFAULT_CHANNEL_ID="@CardanoNodesHeartbeat"
