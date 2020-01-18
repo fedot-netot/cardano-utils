@@ -8,10 +8,12 @@ JORMUNGANDR_START_CMD=${JORMUNGANDR_START_CMD:-"systemctl start jormungandr.serv
 JORMUNGANDR_STOP_CMD=${JORMUNGANDR_STOP_CMD:-"systemctl stop jormungandr.service"}
 JORMUNGANDR_RESTART_CMD=${JORMUNGANDR_RESTART_CMD:-"systemctl restart jormungandr.service"}
 
-DEFAULT_CHECK_INTERVAL=10
-DEFAULT_CRITICAL_LAG_IN_SEC=100
-DEFAULT_UNBELIVABLE_TIME_WO_BLOCKS_IN_NET=200
-DEFAULT_REPORT_INTERVAL=1
+DEFAULT_CHECK_INTERVAL=10 # in seconds
+DEFAULT_CRITICAL_LAG_IN_SEC=100 # in seconds
+DEFAULT_UNBELIVABLE_TIME_WO_BLOCKS_IN_NET=200 # in seconds
+DEFAULT_BOTTSTRAP_CRITYCAL_DURATION=6 # in seconds
+DEFAULT_REPORT_INTERVAL=1 # in hours
+DEFAULT_CRITICAL_BOOTSTRAP_DURATION=10 # in minutes
 
 START_TIME=$(date +%s)
 LAST_REPORT_PERIOD_START=$START_TIME
@@ -42,15 +44,20 @@ CRITICAL_LAG_IN_SEC=$DEFAULT_CRITICAL_LAG_IN_SEC
 CHECK_INTERVAL=$DEFAULT_CHECK_INTERVAL
 UNBELIVABLE_TIME_WO_BLOCKS_IN_NET=$DEFAULT_UNBELIVABLE_TIME_WO_BLOCKS_IN_NET
 REPORT_INTERVAL=$DEFAULT_REPORT_INTERVAL
+CRITICAL_BOOTSTRAP_DURATION=$(( 60*DEFAULT_CRITICAL_BOOTSTRAP_DURATION ))
 
 function showHelp {
     cat <<EOF
-usage: $(basename $0) [-i INTERVAL] [-l LAG] [-w LAG_WO_BLOCK] [-L LOG_LEVEL] [-r INTERVAL] [-j] [-h]
+usage: $(basename $0) [-i SECONDS] [-l LAG] [-w SECONDS] [-b MINUTES] [-L LOG_LEVEL] [-r HOURS] [-j] [-h]
   -i  The frequency in seconds at which jormungandr health checks will occure.
       If not specified then $DEFAULT_CHECK_INTERVAL seconds interval will be used.
-  -l  Critical lag in seconds. If not defined then default value of $DEFAULT_CRITICAL_LAG_IN_SEC will be used.
+  -l  Critical lag in seconds. If not defined then default value of $DEFAULT_CRITICAL_LAG_IN_SEC seconds
+      will be used.
   -w  Count of seconds without blocks in the net that can apear. If our node does not receive blocks during
-      this interval then it will be restarted. Default value - $DEFAULT_UNBELIVABLE_TIME_WO_BLOCKS_IN_NET.
+      this interval then it will be restarted.
+      Default value - $DEFAULT_UNBELIVABLE_TIME_WO_BLOCKS_IN_NET seconds.
+  -b  Maximum bootstrap duration in minutes after wich the node will be restarted again.
+      Default value is $DEFAULT_CRITICAL_BOOTSTRAP_DURATION minutes.
   -L  Log level: 1 - error; 2 - warn; 3 - info; 4 - debug; 5 - trace
   -j  Prepare messages for journald severity levels.
   -r  Report inteval in hours.
@@ -130,21 +137,28 @@ function logTrace {
 
 
 
-while getopts 'i:l:L:w:r:jh' c
+while getopts 'i:l:L:w:b:r:jh' c
 do
     case $c in
         i) CHECK_INTERVAL="$OPTARG" ;;
-        l) if is_number "$OPTARG"; then
+        l) if is_number "$OPTARG" && (( OPTARG > 0 )); then
                CRITICAL_LAG_IN_SEC=$OPTARG
            else
                echo 'Wrong value for option `-l`'
                showHelp;
                exit 1
            fi;;
-        w) if is_number "$OPTARG"; then
+        w) if is_number "$OPTARG" && (( OPTARG > 0 )); then
                UNBELIVABLE_TIME_WO_BLOCKS_IN_NET=$OPTARG
            else
                echo 'Wrong value for option `-w`'
+               showHelp;
+               exit 1
+           fi;;
+        b) if is_number "$OPTARG" && (( OPTARG > 0 )); then
+               CRITICAL_BOOTSTRAP_DURATION=$(( 60 * OPTARG ))
+           else
+               echo 'Wrong value for option `-b`'
                showHelp;
                exit 1
            fi;;
@@ -157,7 +171,7 @@ do
                *) echo 'Wrong value for option `-L`'; showHelp; exit 1;;
            esac;;
         j) WITH_JOURNALD=1;;
-        r) if is_number "$OPTARG"; then
+        r) if is_number "$OPTARG" && (( OPTARG > 0 )); then
                REPORT_INTERVAL=$OPTARG
            else
                echo 'Wrong value for option `-r`'
@@ -179,7 +193,7 @@ state=
 lastBlockTime=
 lastReceivedBlockTime=
 uptime=
-CHECK_DATE=
+CHECK_DATE=$NOW
 CONNECTIONS=
 
 
@@ -240,6 +254,7 @@ function startJormungandr {
 
 function restartJormungandr {
     eval "$JORMUNGANDR_RESTART_CMD"
+    LAST_BOOTSTRAP_START=$CHECK_DATE
 }
 
 function isBootstrappingState {
@@ -398,9 +413,16 @@ do
             (( TOTAL_BOOTSTRAP_COUNT++ ))
             (( LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_COUNT++ ))
         fi
+        if isCriticalLag ${LAST_BOOTSTRAP_START:-$CHECK_DATE} $CHECK_DATE $CRITICAL_BOOTSTRAP_DURATION; then
+            logWarn "Restarting node because of bootstrap process took more than $(displaytime $CRITICAL_BOOTSTRAP_DURATION)"
+            if restartJormungandr; then
+                (( JUST_RESTARTED = 1 ))
+            fi
+        fi
         incrementBootstrapDuration
         incrementDowntime
     elif isRunningState $state; then
+        unset LAST_BOOTSTRAP_START
         incrementConnectionStatistic
         if isBootstrappingState $PREV_state; then
             incrementBootstrapDuration
