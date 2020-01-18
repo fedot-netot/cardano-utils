@@ -37,6 +37,13 @@ TOTAL_CONNECTIONS_COUNT=0
 LAST_REPORT_PERIOD_TOTAL_CONNECTIONS=0
 LAST_REPORT_PERIOD_TOTAL_CONNECTIONS_COUNT=0
 
+TOTAL_LAG_COUNT=0
+TOTAL_LAG=0
+MAX_LAG=0
+LAST_REPORT_PERIOD_TOTAL_LAG_COUNT=0
+LAST_REPORT_PERIOD_TOTAL_LAG=0
+LAST_REPORT_PERIOD_MAX_LAG=0
+
 
 WITH_JOURNALD=0
 LOG_LEVEL=3 # 1 - error, 2 - warn, 3 - info, 4 - debug, 5 - trace
@@ -244,6 +251,19 @@ function incrementConnectionStatistic {
     fi
 }
 
+function incrementLagStatistic {
+    if is_number "$lastBlockTime" && is_number "$lastReceivedBlockTime" && (( lastReceivedBlockTime >= lastBlockTime )); then
+        local LAG
+        (( LAG = lastReceivedBlockTime - lastBlockTime ))
+        (( TOTAL_LAG_COUNT += 1 ))
+        (( TOTAL_LAG += LAG ))
+        (( LAG > MAX_LAG )) && (( MAX_LAG = LAG ))
+        (( LAST_REPORT_PERIOD_TOTAL_LAG_COUNT += 1 ))
+        (( LAST_REPORT_PERIOD_TOTAL_LAG += LAG ))
+        (( LAG > LAST_REPORT_PERIOD_MAX_LAG )) && (( LAST_REPORT_PERIOD_MAX_LAG = LAG ))
+    fi
+}
+
 function stopJormungandr {
     eval "$JORMUNGANDR_STOP_CMD"
 }
@@ -319,6 +339,9 @@ function logTotal {
     if (( TOTAL_CONNECTIONS_COUNT > 1 )); then
     logNotice "  average neighbors count:    $(( TOTAL_CONNECTIONS / TOTAL_CONNECTIONS_COUNT ))"
     fi
+    if (( TOTAL_LAG_COUNT > 0 )); then
+    logNotice "  average/max lag in seconds: $(( TOTAL_LAG / TOTAL_LAG_COUNT )) / $MAX_LAG"
+    fi
 }
 
 function logLastPeriod {
@@ -350,6 +373,9 @@ function logLastPeriod {
     if (( LAST_REPORT_PERIOD_TOTAL_CONNECTIONS_COUNT > 1 )); then
     logNotice "  average neighbors count:    $(( LAST_REPORT_PERIOD_TOTAL_CONNECTIONS / LAST_REPORT_PERIOD_TOTAL_CONNECTIONS_COUNT ))"
     fi
+    if (( LAST_REPORT_PERIOD_TOTAL_LAG_COUNT > 0 )); then
+    logNotice "  average/max lag in seconds: $(( LAST_REPORT_PERIOD_TOTAL_LAG / LAST_REPORT_PERIOD_TOTAL_LAG_COUNT )) / $LAST_REPORT_PERIOD_MAX_LAG"
+    fi
 
     (( LAST_REPORT_PERIOD_START = CHECK_DATE ))
     (( LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_COUNT = 0 ))
@@ -360,6 +386,9 @@ function logLastPeriod {
     (( LAST_REPORT_PERIOD_TOTAL_UPTIME_DURATION = 0 ))
     (( LAST_REPORT_PERIOD_TOTAL_CONNECTIONS_COUNT = 0 ))
     (( LAST_REPORT_PERIOD_TOTAL_CONNECTIONS = 0 ))
+    (( LAST_REPORT_PERIOD_TOTAL_LAG_COUNT = 0 ))
+    (( LAST_REPORT_PERIOD_TOTAL_LAG = 0 ))
+    (( LAST_REPORT_PERIOD_MAX_LAG = 0 ))
 }
 
 function exit1 {
@@ -424,6 +453,7 @@ do
     elif isRunningState $state; then
         unset LAST_BOOTSTRAP_START
         incrementConnectionStatistic
+        incrementLagStatistic
         if isBootstrappingState $PREV_state; then
             incrementBootstrapDuration
             logNotice "Node bootstrapped in $LAST_BOOTSTRAP_DURATION seconds ($(displaytime $LAST_BOOTSTRAP_DURATION))"
