@@ -10,7 +10,7 @@ DEFAULT_REPORT_CMD='jcli rest v0 node stats get; echo "\nNeigbors: $(netstat -tn
 function showHelp() {
     cat <<EOF
 usage: $0 -p -i -a -c -r -h
-  -p  Pool name/identifier. You can use the ticker of your pool here. This parameter is mandatory.
+  -p  Pool name/identifier. You can use the ticker of your pool here.
   -i  Interval in minutes that will be used for regular sending.
       If not specified then send info only once and exit.
   -a  Bot access token. If not specified then environment variable with name \`TELEGRAM_BOT_AUTH_TOKEN\`
@@ -43,18 +43,8 @@ do
     esac
 done
 
-if [ "$POOL_ID" == "" ]; then
-    echo 'Parameter `-p` is mandatory'
-    showHelp
-    exit 1
-fi
-# if [ "$AUTH_TOKEN" == "" ]; then
-#     echo 'You must specify `-a` option or set environment variable `TELEGRAM_BOT_AUTH_TOKEN`'
-#     showHelp
-#     exit 1
-# fi
-if [ "$CHANNEL_ID" == "" ]; then
-    echo 'You must specify `-c` option or set environment variable `TELEGRAM_CHANNEL_ID`'
+if ( [ -n "$AUTH_TOKEN" ] && [ -z "$CHANNEL_ID" ] ) || ( [ -z "$AUTH_TOKEN" ] && [ -n "$CHANNEL_ID" ] ); then
+    echo 'You must specify neither or both of `-a` and `-c`'
     showHelp
     exit 1
 fi
@@ -63,11 +53,11 @@ fi
 while :;
 do
 REPORT=$(/bin/sh -c "$REPORT_CMD")
-if [ "$AUTH_TOKEN" != "" ]; then
-echo -e "$POOL_ID\n$REPORT" | \
-curl --silent --request POST https://api.telegram.org/bot$AUTH_TOKEN/sendMessage --data chat_id="$CHANNEL_ID" --data-urlencode text@- > /dev/null || true
+if [ -n "$CHANNEL_ID" ]; then
+echo -e "${POOL_ID:+${POOL_ID}\n}$REPORT" | \
+curl --silent --request POST https://api.telegram.org/bot$AUTH_TOKEN/sendMessage --data chat_id="$CHANNEL_ID" --data-urlencode text@- > /dev/null
 fi
-echo -e "$POOL_ID\n$REPORT"
+echo -e "${POOL_ID:+${POOL_ID}\n}$REPORT"
 if [ -z $INTERVAL ]; then
     exit 0
 fi
