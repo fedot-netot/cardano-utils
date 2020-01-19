@@ -52,6 +52,10 @@ CHECK_INTERVAL=$DEFAULT_CHECK_INTERVAL
 UNBELIVABLE_TIME_WO_BLOCKS_IN_NET=$DEFAULT_UNBELIVABLE_TIME_WO_BLOCKS_IN_NET
 REPORT_INTERVAL=$DEFAULT_REPORT_INTERVAL
 CRITICAL_BOOTSTRAP_DURATION=$(( 60*DEFAULT_CRITICAL_BOOTSTRAP_DURATION ))
+T_CHANNEL_ID=$TELEGRAM_CHANNEL_ID
+T_AUTH_TOKEN=$TELEGRAM_BOT_AUTH_TOKEN
+T_MESSAGE_HEADER=
+
 
 function showHelp {
     cat <<EOF
@@ -68,6 +72,11 @@ usage: $(basename $0) [-i SECONDS] [-l LAG] [-w SECONDS] [-b MINUTES] [-L LOG_LE
   -L  Log level: 1 - error; 2 - warn; 3 - info; 4 - debug; 5 - trace
   -j  Prepare messages for journald severity levels.
   -r  Report inteval in hours.
+  -a  Bot access token. If not specified then environment variable with name \`TELEGRAM_BOT_AUTH_TOKEN\`
+      will be used for authentication. If none specified then telegram output will not be used.
+  -c  Telegram channel to which publish statistics. E.g. \`@CardanoNodesHeartbeat\`. If not specified then
+      the environment variable \`TELEGRAM_BOT_AUTH_TOKEN\` will be used.
+  -p  Telegram messages header. If defined it will be the first line of every message.
   -h  Show this help.
 
 This scrip observes jormungandr healh. And if jormungandr is not running and syncing then start/restart it.
@@ -83,7 +92,7 @@ function is_number {
   fi
 }
 
-function displaytime {
+function printInterval {
   local T=$1
   local always_show_seconds=${2:-"yes"}
   local D=$((T/60/60/24))
@@ -103,38 +112,70 @@ function displaytime {
   fi
 }
 
+function printInterval2 {
+  local T=$1
+  local D=$((T/60/60/24))
+  local H=$((T/60/60%24))
+  local M=$((T/60%60))
+  local S=$((T%60))
+  (( $D > 0 )) && printf '%dd ' $D
+  (( $H > 0 )) && printf '%dh ' $H
+  (( $M > 0 )) && printf '%dm ' $M
+  (( $S > 0 )) && printf '%ds' $S
+}
+
 function logError {
     if (( LOG_LEVEL >= 1  )); then
-        (( WITH_JOURNALD )) && echo -n '<3>'
-        echo -e "\e[31m$1\e[0m" >&2
+        if [ "$SIMPLE_LOGGING" == "yes" ]; then
+            echo "$1"
+        else
+            (( WITH_JOURNALD )) && echo -n '<3>'
+            echo -e "\e[31m$1\e[0m" >&2
+        fi
     fi
 }
 
 function logWarn {
     if (( LOG_LEVEL >= 2  )); then
-        (( WITH_JOURNALD )) && echo -n '<4>'
-        echo -e "\e[93m$1\e[0m" >&2
+        if [ "$SIMPLE_LOGGING" == "yes" ]; then
+            echo "$1"
+        else
+            (( WITH_JOURNALD )) && echo -n '<4>'
+            echo -e "\e[93m$1\e[0m" >&2
+        fi
     fi
 }
 
 function logNotice {
     if (( LOG_LEVEL >= 3  )); then
-        (( WITH_JOURNALD )) && echo -n '<5>'
-        echo -e "\e[1m$1\e[0m"
+        if [ "$SIMPLE_LOGGING" == "yes" ]; then
+            echo "$1"
+        else
+            (( WITH_JOURNALD )) && echo -n '<5>'
+            echo -e "\e[1m$1\e[0m"
+        fi
     fi
 }
 
 function logInfo {
     if (( LOG_LEVEL >= 3  )); then
-        (( WITH_JOURNALD )) && echo -n '<6>'
-        echo -e "$1"
+        if [ "$SIMPLE_LOGGING" == "yes" ]; then
+            echo "$1"
+        else
+            (( WITH_JOURNALD )) && echo -n '<6>'
+            echo -e "$1"
+        fi
     fi
 }
 
 function logDebug {
     if (( LOG_LEVEL >= 5  )); then
-        (( WITH_JOURNALD )) && echo -n '<7>'
-        echo -e "\e[2m$1\e[0m"
+        if [ "$SIMPLE_LOGGING" == "yes" ]; then
+            echo "$1"
+        else
+            (( WITH_JOURNALD )) && echo -n '<7>'
+            echo -e "\e[2m$1\e[0m"
+        fi
     fi
 }
 
@@ -144,7 +185,7 @@ function logTrace {
 
 
 
-while getopts 'i:l:L:w:b:r:jh' c
+while getopts 'i:l:L:w:b:r:a:c:p:jh' c
 do
     case $c in
         i) CHECK_INTERVAL="$OPTARG" ;;
@@ -185,10 +226,18 @@ do
                showHelp;
                exit 1
            fi;;
+        a) T_AUTH_TOKEN="$OPTARG" ;;
+        c) T_CHANNEL_ID="$OPTARG" ;;
+        p) T_MESSAGE_HEADER="$OPTARG" ;;
         h) showHelp; exit 0 ;;
     esac
 done
 
+if ( [ -n "$T_AUTH_TOKEN" ] && [ -z "$T_CHANNEL_ID" ] ) || ( [ -z "$T_AUTH_TOKEN" ] && [ -n "$T_CHANNEL_ID" ] ); then
+    echo 'You must specify neither or both of `-a` and `-c`'
+    showHelp
+    exit 1
+fi
 
 
 NOW=$(date +%s)
@@ -310,10 +359,66 @@ function readJormungandrState {
     CHECK_DATE=$(date +%s)
 }
 
-function logTotal {
+function sendToTelegram {
+    curl --silent \
+         --request POST https://api.telegram.org/bot$T_AUTH_TOKEN/sendMessage \
+         --data parse_mode=HTML \
+         --data chat_id="$T_CHANNEL_ID" \
+         --data-urlencode text@- \
+         > /dev/null
+}
+
+function logTotal()
+(
+
+    local PUBLISH_VIA_TELEGRAM=${1:-"yes"}
+
     if (( UPTIME == 0 && DOWNTIME == 0 )); then
         return
     fi
+
+    function log {
+        if [ "$SIMPLE_LOGGING" == "yes" ]; then
+            logNotice "\n===== <b>Total statistics</b> ====="
+            logNotice "Time elapsed: <u><b><i>$(printInterval2 $(( now - START_TIME )))</i></b></u>"
+            logNotice "Node was running: <u><b><i>${uptime_percent}%</i></b></u> of time"
+            if (( TOTAL_UPTIME_COUNT > 1 )); then
+            logNotice "Average uptime duration: <u><b><i>$(printInterval2 $(( TOTAL_UPTIME_DURATION / TOTAL_UPTIME_COUNT )))</i></b></u>"
+            elif [ -n "$uptime" ] && (( uptime > 0 )); then
+            logNotice "Single uptime duration: <u><b><i>$(printInterval2 $(( uptime )))</i></b></u>"
+            fi
+            logNotice "Node was bootstrapped: <u><b><i>$TOTAL_BOOTSTRAP_COUNT</i></b></u> time(s)"
+            if (( TOTAL_BOOTSTRAP_COUNT > 0 )); then
+            logNotice "Average bootstrap duration: <u><b><i>$(printInterval2 $(( TOTAL_BOOTSTRAP_DURATION / TOTAL_BOOTSTRAP_COUNT )))</i></b></u>"
+            fi
+            if (( TOTAL_CONNECTIONS_COUNT > 1 )); then
+            logNotice "Average neighbors count: <u><b><i>$(( TOTAL_CONNECTIONS / TOTAL_CONNECTIONS_COUNT ))</i></b></u>"
+            fi
+            if (( TOTAL_LAG_COUNT > 0 )); then
+            logNotice "Average/Max lag in seconds: <u><b><i>$(( TOTAL_LAG / TOTAL_LAG_COUNT ))</i></b></u>/<u><b><i>$MAX_LAG</i></b></u>"
+            fi
+        else
+            logNotice "Total statistics since overseer started:"
+            logNotice "  time elapsed:               $(printInterval $(( now - START_TIME )))"
+            logNotice "  node was running:           ${uptime_percent}% of time"
+            if (( TOTAL_UPTIME_COUNT > 1 )); then
+            logNotice "  average uptime duration:    $(printInterval $(( TOTAL_UPTIME_DURATION / TOTAL_UPTIME_COUNT )))"
+            elif [ -n "$uptime" ] && (( uptime > 0 )); then
+            logNotice "  single uptime duration:     $(printInterval $(( uptime )))"
+            fi
+            logNotice "  node was bootstrapped:      $TOTAL_BOOTSTRAP_COUNT time(s)"
+            if (( TOTAL_BOOTSTRAP_COUNT > 0 )); then
+            logNotice "  average bootstrap duration: $(printInterval $(( TOTAL_BOOTSTRAP_DURATION / TOTAL_BOOTSTRAP_COUNT )))"
+            fi
+            if (( TOTAL_CONNECTIONS_COUNT > 1 )); then
+            logNotice "  average neighbors count:    $(( TOTAL_CONNECTIONS / TOTAL_CONNECTIONS_COUNT ))"
+            fi
+            if (( TOTAL_LAG_COUNT > 0 )); then
+            logNotice "  average/max lag in seconds: $(( TOTAL_LAG / TOTAL_LAG_COUNT )) / $MAX_LAG"
+            fi
+        fi
+    }
+
     local uptime_percent
     if (( DOWNTIME > 0 )); then
         uptime_percent=$(echo "scale=2; ${UPTIME:-0}*100/(${UPTIME:-0} + ${DOWNTIME}) " | bc -l)
@@ -322,29 +427,65 @@ function logTotal {
     else
         uptime_percent="0"
     fi
-
     local now=$(date +%s)
-    logNotice "Total statistics since overseer started:"
-    logNotice "  time elapsed:               $(displaytime $(( now - START_TIME )))"
-    logNotice "  node was running:           ${uptime_percent}% of time"
-    if (( TOTAL_UPTIME_COUNT > 1 )); then
-    logNotice "  average uptime duration:    $(displaytime $(( TOTAL_UPTIME_DURATION / TOTAL_UPTIME_COUNT )))"
-    elif [ -n "$uptime" ] && (( uptime > 0 )); then
-    logNotice "  single uptime duration:     $(displaytime $(( uptime )))"
-    fi
-    logNotice "  node was bootstrapped:      $TOTAL_BOOTSTRAP_COUNT time(s)"
-    if (( TOTAL_BOOTSTRAP_COUNT > 0 )); then
-    logNotice "  average bootstrap duration: $(displaytime $(( TOTAL_BOOTSTRAP_DURATION / TOTAL_BOOTSTRAP_COUNT )))"
-    fi
-    if (( TOTAL_CONNECTIONS_COUNT > 1 )); then
-    logNotice "  average neighbors count:    $(( TOTAL_CONNECTIONS / TOTAL_CONNECTIONS_COUNT ))"
-    fi
-    if (( TOTAL_LAG_COUNT > 0 )); then
-    logNotice "  average/max lag in seconds: $(( TOTAL_LAG / TOTAL_LAG_COUNT )) / $MAX_LAG"
-    fi
-}
 
-function logLastPeriod {
+
+    log
+    if [ "$PUBLISH_VIA_TELEGRAM" == "yes" ] && [ -n "$T_AUTH_TOKEN" ] && [ -n "$T_CHANNEL_ID" ]; then
+        SIMPLE_LOGGING=yes
+        if [ -n "$T_MESSAGE_HEADER" ]; then
+            local HEADER="$T_MESSAGE_HEADER\n"
+        fi
+        echo -e "${HEADER}$(log)" | sendToTelegram
+    fi
+)
+
+function logLastPeriod_()
+(
+    function log {
+        if [ "$SIMPLE_LOGGING" == "yes" ]; then
+            logNotice "\n===== <b>Last $(printInterval2 REPORT_INTERVAL) statistic</b> ====="
+
+            logNotice "Node was running: <u><b><i>${uptime_percent}%</i></b></u> of time"
+            if (( LAST_REPORT_PERIOD_TOTAL_UPTIME_COUNT > 1 )); then
+            logNotice "Average uptime duration: <u><b><i>$(printInterval2 $(( LAST_REPORT_PERIOD_TOTAL_UPTIME_DURATION / LAST_REPORT_PERIOD_TOTAL_UPTIME_COUNT )))</i></b></u>"
+            elif [ -n "$uptime" ] && (( uptime > 0 )); then
+            logNotice "Single uptime duration: <u><b><i>$(printInterval2 $(( uptime )))</i></b></u>"
+            fi
+            logNotice "Node was bootstrapped: <u><b><i>${LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_COUNT}</i></b></u> time(s)"
+            if (( LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_COUNT > 0 )); then
+            logNotice "Average bootstrap duration: <u><b><i>$(printInterval2 $(( LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_DURATION / LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_COUNT )))</i></b></u>"
+            fi
+            if (( LAST_REPORT_PERIOD_TOTAL_CONNECTIONS_COUNT > 1 )); then
+            logNotice "Average neighbors count: <u><b><i>$(( LAST_REPORT_PERIOD_TOTAL_CONNECTIONS / LAST_REPORT_PERIOD_TOTAL_CONNECTIONS_COUNT ))</i></b></u>"
+            fi
+            if (( LAST_REPORT_PERIOD_TOTAL_LAG_COUNT > 0 )); then
+            logNotice "Average/Max lag in seconds: <u><b><i>$(( LAST_REPORT_PERIOD_TOTAL_LAG / LAST_REPORT_PERIOD_TOTAL_LAG_COUNT ))</i></b></u>/<u><b><i>$LAST_REPORT_PERIOD_MAX_LAG</i></b></u>"
+            fi
+        else
+            if (( REPORT_INTERVAL == 1 )); then
+                logNotice "Statistics for the last hour:"
+            else
+                logNotice "Statistics for the last $REPORT_INTERVAL hours:"
+            fi
+            logNotice "  node was running:           ${uptime_percent}% of time"
+            if (( LAST_REPORT_PERIOD_TOTAL_UPTIME_COUNT > 1 )); then
+            logNotice "  average uptime duration:    $(printInterval $(( LAST_REPORT_PERIOD_TOTAL_UPTIME_DURATION / LAST_REPORT_PERIOD_TOTAL_UPTIME_COUNT )))"
+            elif [ -n "$uptime" ] && (( uptime > 0 )); then
+            logNotice "  single uptime duration:     $(printInterval $(( uptime )))"
+            fi
+            logNotice "  node was bootstrapped:      $LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_COUNT time(s)"
+            if (( LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_COUNT > 0 )); then
+            logNotice "  average bootstrap duration: $(printInterval $(( LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_DURATION / LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_COUNT )))"
+            fi
+            if (( LAST_REPORT_PERIOD_TOTAL_CONNECTIONS_COUNT > 1 )); then
+            logNotice "  average neighbors count:    $(( LAST_REPORT_PERIOD_TOTAL_CONNECTIONS / LAST_REPORT_PERIOD_TOTAL_CONNECTIONS_COUNT ))"
+            fi
+            if (( LAST_REPORT_PERIOD_TOTAL_LAG_COUNT > 0 )); then
+            logNotice "  average/max lag in seconds: $(( LAST_REPORT_PERIOD_TOTAL_LAG / LAST_REPORT_PERIOD_TOTAL_LAG_COUNT )) / $LAST_REPORT_PERIOD_MAX_LAG"
+            fi
+        fi
+    }
     local uptime_percent
     if (( REPORT_PERIOD_DOWNTIME > 0 )); then
         uptime_percent=$(echo "scale=2; ${REPORT_PERIOD_UPTIME:-0}*100/(${REPORT_PERIOD_UPTIME:-0} + ${REPORT_PERIOD_DOWNTIME}) " | bc -l)
@@ -353,29 +494,16 @@ function logLastPeriod {
     else
         uptime_percent="0"
     fi
-
     local now=$(date +%s)
-    if (( REPORT_INTERVAL == 1 )); then
-        logNotice "Statistics for the last hour:"
-    else
-        logNotice "Statistics for the last $REPORT_INTERVAL hours:"
+    log
+    if [ -n "$T_AUTH_TOKEN" ] && [ -n "$T_CHANNEL_ID" ]; then
+        SIMPLE_LOGGING=yes
+        log | sendToTelegram
     fi
-    logNotice "  node was running:           ${uptime_percent}% of time"
-    if (( LAST_REPORT_PERIOD_TOTAL_UPTIME_COUNT > 1 )); then
-    logNotice "  average uptime duration:    $(displaytime $(( LAST_REPORT_PERIOD_TOTAL_UPTIME_DURATION / LAST_REPORT_PERIOD_TOTAL_UPTIME_COUNT )))"
-    elif [ -n "$uptime" ] && (( uptime > 0 )); then
-    logNotice "  single uptime duration:     $(displaytime $(( uptime )))"
-    fi
-    logNotice "  node was bootstrapped:      $LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_COUNT time(s)"
-    if (( LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_COUNT > 0 )); then
-    logNotice "  average bootstrap duration: $(displaytime $(( LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_DURATION / LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_COUNT )))"
-    fi
-    if (( LAST_REPORT_PERIOD_TOTAL_CONNECTIONS_COUNT > 1 )); then
-    logNotice "  average neighbors count:    $(( LAST_REPORT_PERIOD_TOTAL_CONNECTIONS / LAST_REPORT_PERIOD_TOTAL_CONNECTIONS_COUNT ))"
-    fi
-    if (( LAST_REPORT_PERIOD_TOTAL_LAG_COUNT > 0 )); then
-    logNotice "  average/max lag in seconds: $(( LAST_REPORT_PERIOD_TOTAL_LAG / LAST_REPORT_PERIOD_TOTAL_LAG_COUNT )) / $LAST_REPORT_PERIOD_MAX_LAG"
-    fi
+)
+
+function logLastPeriod {
+    logLastPeriod_
 
     (( LAST_REPORT_PERIOD_START = CHECK_DATE ))
     (( LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_COUNT = 0 ))
@@ -392,7 +520,7 @@ function logLastPeriod {
 }
 
 function exit1 {
-    logTotal
+    logTotal "no"
     exit 1
 }
 
@@ -443,7 +571,7 @@ do
             (( LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_COUNT++ ))
         fi
         if isCriticalLag ${LAST_BOOTSTRAP_START:-$CHECK_DATE} $CHECK_DATE $CRITICAL_BOOTSTRAP_DURATION; then
-            logWarn "Restarting node because of bootstrap process took more than $(displaytime $CRITICAL_BOOTSTRAP_DURATION)"
+            logWarn "Restarting node because of bootstrap process took more than $(printInterval $CRITICAL_BOOTSTRAP_DURATION)"
             if restartJormungandr; then
                 (( JUST_RESTARTED = 1 ))
             fi
@@ -456,13 +584,13 @@ do
         incrementLagStatistic
         if isBootstrappingState $PREV_state; then
             incrementBootstrapDuration
-            logNotice "Node bootstrapped in $LAST_BOOTSTRAP_DURATION seconds ($(displaytime $LAST_BOOTSTRAP_DURATION))"
+            logNotice "Node bootstrapped in $LAST_BOOTSTRAP_DURATION seconds ($(printInterval $LAST_BOOTSTRAP_DURATION))"
         elif ! isRunningState $PREV_state; then
             logNotice "Node is running"
         else
             if isCriticalLag $uptime 0 && isCriticalLag ${lastReceivedBlockTime:-$CHECK_DATE} $lastBlockTime; then
                 logWarn "Restarting node because of some blocks did not received during $CRITICAL_LAG_IN_SEC seconds"
-                logInfo "Uptime before restart: $uptime seconds ($(displaytime $uptime))"
+                logInfo "Uptime before restart: $uptime seconds ($(printInterval $uptime))"
                 incrementDowntime
                 incrementUptimeDuration
                 if restartJormungandr; then
@@ -470,7 +598,7 @@ do
                 fi
             elif isCriticalLag $CHECK_DATE ${lastReceivedBlockTime:-$CHECK_DATE} $UNBELIVABLE_TIME_WO_BLOCKS_IN_NET; then
                 logWarn "Restarting node because no one block has been received during last $UNBELIVABLE_TIME_WO_BLOCKS_IN_NET seconds"
-                logInfo "Uptime before restart: $uptime seconds ($(displaytime $uptime))"
+                logInfo "Uptime before restart: $uptime seconds ($(printInterval $uptime))"
                 incrementDowntime
                 incrementUptimeDuration
                 if restartJormungandr; then
