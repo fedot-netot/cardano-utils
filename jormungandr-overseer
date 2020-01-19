@@ -233,11 +233,11 @@ do
     esac
 done
 
-if ( [ -n "$T_AUTH_TOKEN" ] && [ -z "$T_CHANNEL_ID" ] ) || ( [ -z "$T_AUTH_TOKEN" ] && [ -n "$T_CHANNEL_ID" ] ); then
-    echo 'You must specify neither or both of `-a` and `-c`'
-    showHelp
-    exit 1
-fi
+# if ( [ -n "$T_AUTH_TOKEN" ] && [ -z "$T_CHANNEL_ID" ] ) || ( [ -z "$T_AUTH_TOKEN" ] && [ -n "$T_CHANNEL_ID" ] ); then
+#     echo 'You must specify neither or both of `-a` and `-c`'
+#     showHelp
+#     exit 1
+# fi
 
 
 NOW=$(date +%s)

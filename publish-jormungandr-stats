@@ -1,8 +1,6 @@
 #! /bin/sh
 
 
-# Default channel to publish messages in
-DEFAULT_CHANNEL_ID="@CardanoNodesHeartbeat"
 # Default value of command which output will be sent to the log
 DEFAULT_REPORT_CMD='jcli rest v0 node stats get; echo "\nNeigbors: $(netstat -tnp 2> /dev/null| grep -E ''ESTABLISHED.+jormungandr'' | cut -c45-65 | sort | uniq | wc -l)"'
 
@@ -15,7 +13,7 @@ usage: $0 -p -i -a -c -r -h
       If not specified then send info only once and exit.
   -a  Bot access token. If not specified then environment variable with name \`TELEGRAM_BOT_AUTH_TOKEN\`
       will be used for authentication. If none specified then telegram output will not be used.
-  -c  Telegram channel to which send messages. E.g. \`$DEFAULT_CHANNEL_ID\`. If not specified then
+  -c  Telegram channel to which send messages. E.g. \`@CardanoNodesHeartbeat\`. If not specified then
       the environment variable \`TELEGRAM_BOT_AUTH_TOKEN\` will be used.
   -r  Command which output will be sent to the log. This is optional parameter.
       If unspecified then the next comand will be used: \`$DEFAULT_REPORT_CMD\`
@@ -26,8 +24,8 @@ EOF
 }
 
 
-CHANNEL_ID="${TELEGRAM_CHANNEL_ID:-$DEFAULT_CHANNEL_ID}"
 REPORT_CMD=$DEFAULT_REPORT_CMD
+CHANNEL_ID="$TELEGRAM_CHANNEL_ID"
 # Access token for Telegram Bot API
 AUTH_TOKEN=$TELEGRAM_BOT_AUTH_TOKEN
 
@@ -43,17 +41,17 @@ do
     esac
 done
 
-if ( [ -n "$AUTH_TOKEN" ] && [ -z "$CHANNEL_ID" ] ) || ( [ -z "$AUTH_TOKEN" ] && [ -n "$CHANNEL_ID" ] ); then
-    echo 'You must specify neither or both of `-a` and `-c`'
-    showHelp
-    exit 1
-fi
+# if ( [ -n "$AUTH_TOKEN" ] && [ -z "$CHANNEL_ID" ] ) || ( [ -z "$AUTH_TOKEN" ] && [ -n "$CHANNEL_ID" ] ); then
+#     echo 'You must specify neither or both of `-a` and `-c`'
+#     showHelp
+#     exit 1
+# fi
 
 
 while :;
 do
 REPORT=$(/bin/sh -c "$REPORT_CMD")
-if [ -n "$CHANNEL_ID" ]; then
+if [ -n "$CHANNEL_ID" ] && [ -n "$AUTH_TOKEN" ]; then
 echo -e "${POOL_ID:+${POOL_ID}\n}$REPORT" | \
 curl --silent --request POST https://api.telegram.org/bot$AUTH_TOKEN/sendMessage --data chat_id="$CHANNEL_ID" --data-urlencode text@- > /dev/null
 fi
