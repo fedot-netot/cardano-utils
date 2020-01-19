@@ -235,12 +235,6 @@ do
     esac
 done
 
-# if ( [ -n "$T_AUTH_TOKEN" ] && [ -z "$T_CHANNEL_ID" ] ) || ( [ -z "$T_AUTH_TOKEN" ] && [ -n "$T_CHANNEL_ID" ] ); then
-#     echo 'You must specify neither or both of `-a` and `-c`'
-#     showHelp
-#     exit 1
-# fi
-
 
 NOW=$(date +%s)
 
@@ -438,7 +432,7 @@ function logTotal()
     log
 )
 
-function logLastPeriod_()
+function logLastPeriod()
 (
     local SIMPLE_LOGGING=$1
 
@@ -503,9 +497,7 @@ function logLastPeriod_()
     log
 )
 
-function logLastPeriod {
-    logLastPeriod_ $1
-
+function startNewPeriod {
     (( LAST_REPORT_PERIOD_START = CHECK_DATE ))
     (( LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_COUNT = 0 ))
     (( LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_DURATION = 0 ))
@@ -552,6 +544,7 @@ do
         logTotal
         logLastPeriod
         echo -e "$(logTotal yes)\n\n$(logLastPeriod yes)" | sendToTelegram
+        startNewPeriod
     fi
 
     if [ -z "$state" ]; then
