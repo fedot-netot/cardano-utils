@@ -55,44 +55,69 @@ function is_number {
 }
 
 function printInterval {
-  local T=$1
-  local always_show_seconds=${2:-"yes"}
-  local D=$((T/60/60/24))
-  local H=$((T/60/60%24))
-  local M=$((T/60%60))
-  local S=$((T%60))
-  (( $D == 1 )) && printf '%d day ' $D
-  (( $D >  1 )) && printf '%d days ' $D
-  (( $H == 1 )) && printf '%d hour ' $H
-  (( $H >  1 )) && printf '%d hours ' $H
-  (( $M == 1 )) && printf '%d minute ' $M
-  (( $M >  1 )) && printf '%d minutes ' $M
-  if [ "$always_show_seconds" == "yes" ] || (( $S > 0 )); then
-      (( $D > 0 || $H > 0 || $M > 0 )) && printf 'and '
-      (( $S == 1 )) && printf '%d second' $S
-      (( $S != 1 )) && printf '%d seconds' $S
-  fi
+    local T=$1
+    local always_show_seconds=${2:-"no"}
+    if ! is_number $T; then
+        return 1
+    fi
+    if (( T < 0 )); then
+        (( T = -T ))
+        local sign = "minus "
+    fi
+    local D=$((T/60/60/24))
+    local H=$((T/60/60%24))
+    local M=$((T/60%60))
+    local S=$((T%60))
+
+    printf '%s' $sign
+    if (( D > 0 )); then
+        printf '%d day' $D
+        (( D > 1 )) && printf 's'
+    fi
+    if (( H > 0 )); then
+        (( D > 0 )) && printf ' '
+        printf '%d hour' $H
+        (( H >  1 )) && printf 's'
+    fi
+    if (( M > 0 )); then
+        (( D > 0 || H > 0 )) && printf ' '
+        printf '%d minute' $M
+        (( M > 1 )) && printf 's'
+    fi
+    if (( S > 0 || $T == 0 )) || [ "$always_show_seconds" == "yes" ]; then
+        (( D > 0 || H > 0 || M > 0 )) && printf ' and '
+        printf '%d second' $S
+        (( S != 1 )) && printf 's'
+    fi
 }
 
-function printInterval2 {
-  local T=$1
-  local D=$((T/60/60/24))
-  local H=$((T/60/60%24))
-  local M=$((T/60%60))
-  local S=$((T%60))
-  (( $D > 0 )) && printf '%dd' $D
-  if (( $H > 0 )); then
-      (( $D > 0 )) && printf ' '
-      printf '%dh' $H
-  fi
-  if (( $M > 0 )); then
-      (( $D > 0 || $H > 0 )) && printf ' '
-      printf '%dm' $M
-  fi
-  if (( $S > 0 )); then
-      (( $D > 0 || $H > 0 || $M > 0 )) && printf ' '
-      printf '%ds' $S
-  fi
+function printIntervalShortly {
+    local T=$1
+    if ! is_number $T; then
+        return 1
+    fi
+    if (( T < 0 )); then
+        (( T = -T ))
+        local sign = "- "
+    fi
+    local D=$((T/60/60/24))
+    local H=$((T/60/60%24))
+    local M=$((T/60%60))
+    local S=$((T%60))
+    printf "%s" $sign
+    (( D > 0 )) && printf '%dd' $D
+    if (( H > 0 )); then
+        (( D > 0 )) && printf ' '
+        printf '%dh' $H
+    fi
+    if (( M > 0 )); then
+        (( D > 0 || H > 0 )) && printf ' '
+        printf '%dm' $M
+    fi
+    if (( S > 0 || T == 0 )); then
+        (( D > 0 || H > 0 || M > 0 )) && printf ' '
+        printf '%ds' $S
+    fi
 }
 
 function parseInterval {
@@ -421,16 +446,16 @@ function logTotal()
     function log {
         if [ "$SIMPLE_LOGGING" == "yes" ]; then
             logNotice "===== <b>Total statistics</b> ====="
-            logNotice "Time elapsed: <u><b><i>$(printInterval2 $(( now - START_TIME )))</i></b></u>"
+            logNotice "Time elapsed: <u><b><i>$(printIntervalShortly $(( now - START_TIME )))</i></b></u>"
             logNotice "Node was running: <u><b><i>${uptime_percent}%</i></b></u> of time"
             if (( TOTAL_UPTIME_COUNT > 1 )); then
-            logNotice "Avr. uptime duration: <u><b><i>$(printInterval2 $(( TOTAL_UPTIME_DURATION / TOTAL_UPTIME_COUNT )))</i></b></u>"
+            logNotice "Avr. uptime duration: <u><b><i>$(printIntervalShortly $(( TOTAL_UPTIME_DURATION / TOTAL_UPTIME_COUNT )))</i></b></u>"
             elif [ -n "$uptime" ] && (( uptime > 0 )); then
-            logNotice "Single uptime duration: <u><b><i>$(printInterval2 $(( uptime )))</i></b></u>"
+            logNotice "Single uptime duration: <u><b><i>$(printIntervalShortly $(( uptime )))</i></b></u>"
             fi
             logNotice "Node was bootstrapped: <u><b><i>$TOTAL_BOOTSTRAP_COUNT</i></b></u> time(s)"
             if (( TOTAL_BOOTSTRAP_COUNT > 0 )); then
-            logNotice "Avr. bootstrap duration: <u><b><i>$(printInterval2 $(( TOTAL_BOOTSTRAP_DURATION / TOTAL_BOOTSTRAP_COUNT )))</i></b></u>"
+            logNotice "Avr. bootstrap duration: <u><b><i>$(printIntervalShortly $(( TOTAL_BOOTSTRAP_DURATION / TOTAL_BOOTSTRAP_COUNT )))</i></b></u>"
             fi
             if (( TOTAL_CONNECTIONS_COUNT > 1 )); then
             logNotice "Avr/Max neighbors count: <u><b><i>$(( TOTAL_CONNECTIONS / TOTAL_CONNECTIONS_COUNT ))</i></b></u>/<u><b><i>$(( MAX_CONNECTIONS ))</i></b></u>"
@@ -483,17 +508,17 @@ function logLastPeriod()
 
     function log {
         if [ "$SIMPLE_LOGGING" == "yes" ]; then
-            logNotice "===== <b>Last $(printInterval2 $(( REPORT_INTERVAL ))) statistic</b> ====="
+            logNotice "===== <b>Last $(printIntervalShortly $(( REPORT_INTERVAL ))) statistic</b> ====="
 
             logNotice "Node was running: <u><b><i>${uptime_percent}%</i></b></u> of time"
             if (( LAST_REPORT_PERIOD_TOTAL_UPTIME_COUNT > 1 )); then
-            logNotice "Avr. uptime duration: <u><b><i>$(printInterval2 $(( LAST_REPORT_PERIOD_TOTAL_UPTIME_DURATION / LAST_REPORT_PERIOD_TOTAL_UPTIME_COUNT )))</i></b></u>"
+            logNotice "Avr. uptime duration: <u><b><i>$(printIntervalShortly $(( LAST_REPORT_PERIOD_TOTAL_UPTIME_DURATION / LAST_REPORT_PERIOD_TOTAL_UPTIME_COUNT )))</i></b></u>"
             elif [ -n "$uptime" ] && (( uptime > 0 )); then
-            logNotice "Single uptime duration: <u><b><i>$(printInterval2 $(( uptime )))</i></b></u>"
+            logNotice "Single uptime duration: <u><b><i>$(printIntervalShortly $(( uptime )))</i></b></u>"
             fi
             logNotice "Node was bootstrapped: <u><b><i>${LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_COUNT}</i></b></u> time(s)"
             if (( LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_COUNT > 0 )); then
-            logNotice "Avr. bootstrap duration: <u><b><i>$(printInterval2 $(( LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_DURATION / LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_COUNT )))</i></b></u>"
+            logNotice "Avr. bootstrap duration: <u><b><i>$(printIntervalShortly $(( LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_DURATION / LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_COUNT )))</i></b></u>"
             fi
             if (( LAST_REPORT_PERIOD_TOTAL_CONNECTIONS_COUNT > 1 )); then
             logNotice "Avr/Max neighbors count: <u><b><i>$(( LAST_REPORT_PERIOD_TOTAL_CONNECTIONS / LAST_REPORT_PERIOD_TOTAL_CONNECTIONS_COUNT ))</i></b></u>/<u><b><i></i></b>$LAST_REPORT_PERIOD_MAX_CONNECTIONS</u>"
