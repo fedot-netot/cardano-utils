@@ -38,12 +38,35 @@ LAST_REPORT_PERIOD_TOTAL_CONNECTIONS=0
 LAST_REPORT_PERIOD_MAX_CONNECTIONS=0
 LAST_REPORT_PERIOD_TOTAL_CONNECTIONS_COUNT=0
 
+###
+## Time interval between `lastBlockTime` and `lastReceivedBlockTime`
+#
 TOTAL_LAG_COUNT=0
 TOTAL_LAG=0
 MAX_LAG=0
 LAST_REPORT_PERIOD_TOTAL_LAG_COUNT=0
 LAST_REPORT_PERIOD_TOTAL_LAG=0
 LAST_REPORT_PERIOD_MAX_LAG=0
+
+###
+## Age of `lastBlockTime`
+#
+TOTAL_LAG2_COUNT=0
+TOTAL_LAG2=0
+MAX_LAG2=0
+LAST_REPORT_PERIOD_TOTAL_LAG2_COUNT=0
+LAST_REPORT_PERIOD_TOTAL_LAG2=0
+LAST_REPORT_PERIOD_MAX_LAG2=0
+
+###
+## Age of `lastReceivedBlockTime`
+#
+TOTAL_LAG3_COUNT=0
+TOTAL_LAG3=0
+MAX_LAG3=0
+LAST_REPORT_PERIOD_TOTAL_LAG3_COUNT=0
+LAST_REPORT_PERIOD_TOTAL_LAG3=0
+LAST_REPORT_PERIOD_MAX_LAG3=0
 
 
 function is_number {
@@ -375,6 +398,26 @@ function incrementLagStatistic {
         (( LAST_REPORT_PERIOD_TOTAL_LAG += LAG ))
         (( LAG > LAST_REPORT_PERIOD_MAX_LAG )) && (( LAST_REPORT_PERIOD_MAX_LAG = LAG ))
     fi
+    if is_number "$lastBlockTime" && (( CHECK_DATE >= lastBlockTime )); then
+        local LAG2
+        (( LAG2 = CHECK_DATE - lastBlockTime ))
+        (( TOTAL_LAG2_COUNT += 1 ))
+        (( TOTAL_LAG2 += LAG2 ))
+        (( LAG2 > MAX_LAG2 )) && (( MAX_LAG2 = LAG2 ))
+        (( LAST_REPORT_PERIOD_TOTAL_LAG2_COUNT += 1 ))
+        (( LAST_REPORT_PERIOD_TOTAL_LAG2 += LAG2 ))
+        (( LAG2 > LAST_REPORT_PERIOD_MAX_LAG2 )) && (( LAST_REPORT_PERIOD_MAX_LAG2 = LAG2 ))
+    fi
+    if is_number "$lastReceivedBlockTime" && (( CHECK_DATE >= lastReceivedBlockTime )); then
+        local LAG3
+        (( LAG3 = CHECK_DATE - lastReceivedBlockTime ))
+        (( TOTAL_LAG3_COUNT += 1 ))
+        (( TOTAL_LAG3 += LAG3 ))
+        (( LAG3 > MAX_LAG3 )) && (( MAX_LAG3 = LAG3 ))
+        (( LAST_REPORT_PERIOD_TOTAL_LAG3_COUNT += 1 ))
+        (( LAST_REPORT_PERIOD_TOTAL_LAG3 += LAG3 ))
+        (( LAG3 > LAST_REPORT_PERIOD_MAX_LAG3 )) && (( LAST_REPORT_PERIOD_MAX_LAG3 = LAG3 ))
+    fi
 }
 
 function stopJormungandr {
@@ -461,7 +504,13 @@ function logTotal()
             logNotice "Avr/Max neighbors count: <u><b><i>$(( TOTAL_CONNECTIONS / TOTAL_CONNECTIONS_COUNT ))</i></b></u>/<u><b><i>$(( MAX_CONNECTIONS ))</i></b></u>"
             fi
             if (( TOTAL_LAG_COUNT > 0 )); then
-            logNotice "Avr/Max lag in seconds: <u><b><i>$(( TOTAL_LAG / TOTAL_LAG_COUNT ))</i></b></u>/<u><b><i>$MAX_LAG</i></b></u>"
+            logNotice "Avr/Max lag: <u><b><i>$(printIntervalShortly $(( TOTAL_LAG / TOTAL_LAG_COUNT )))</i></b></u>/<u><b><i>$(printIntervalShortly $MAX_LAG)</i></b></u>"
+            fi
+            if (( TOTAL_LAG2_COUNT > 0 )); then
+            logNotice "Avr/Max tip block age: <u><b><i>$(printIntervalShortly $(( TOTAL_LAG2 / TOTAL_LAG2_COUNT )))</i></b></u>/<u><b><i>$(printIntervalShortly $MAX_LAG2)</i></b></u>"
+            fi
+            if (( TOTAL_LAG3_COUNT > 0 )); then
+            logNotice "Avr/Max last block age: <u><b><i>$(printIntervalShortly $(( TOTAL_LAG3 / TOTAL_LAG3_COUNT )))</i></b></u>/<u><b><i>$(printIntervalShortly $MAX_LAG3)</i></b></u>"
             fi
         else
             logNotice "Total statistics since overseer started:"
@@ -480,7 +529,13 @@ function logTotal()
             logNotice "  average/max neighbors count: $(( TOTAL_CONNECTIONS / TOTAL_CONNECTIONS_COUNT )) / $MAX_CONNECTIONS"
             fi
             if (( TOTAL_LAG_COUNT > 0 )); then
-            logNotice "  average/max lag in seconds:  $(( TOTAL_LAG / TOTAL_LAG_COUNT )) / $MAX_LAG"
+            logNotice "  average/max lag:             $(printInterval $(( TOTAL_LAG / TOTAL_LAG_COUNT ))) / $(printInterval $MAX_LAG)"
+            fi
+            if (( TOTAL_LAG2_COUNT > 0 )); then
+            logNotice "  average/max tip block age:   $(printInterval $(( TOTAL_LAG2 / TOTAL_LAG2_COUNT ))) / $(printInterval $(( MAX_LAG2)))"
+            fi
+            if (( TOTAL_LAG3_COUNT > 0 )); then
+            logNotice "  average/max last block age:  $(printInterval $(( TOTAL_LAG3 / TOTAL_LAG3_COUNT ))) / $(printInterval $(( MAX_LAG3)))"
             fi
         fi
     }
@@ -524,7 +579,13 @@ function logLastPeriod()
             logNotice "Avr/Max neighbors count: <u><b><i>$(( LAST_REPORT_PERIOD_TOTAL_CONNECTIONS / LAST_REPORT_PERIOD_TOTAL_CONNECTIONS_COUNT ))</i></b></u>/<u><b><i></i></b>$LAST_REPORT_PERIOD_MAX_CONNECTIONS</u>"
             fi
             if (( LAST_REPORT_PERIOD_TOTAL_LAG_COUNT > 0 )); then
-            logNotice "Avr/Max lag in seconds: <u><b><i>$(( LAST_REPORT_PERIOD_TOTAL_LAG / LAST_REPORT_PERIOD_TOTAL_LAG_COUNT ))</i></b></u>/<u><b><i>$LAST_REPORT_PERIOD_MAX_LAG</i></b></u>"
+            logNotice "Avr/Max lag: <u><b><i>$(printIntervalShortly $(( LAST_REPORT_PERIOD_TOTAL_LAG / LAST_REPORT_PERIOD_TOTAL_LAG_COUNT )))</i></b></u>/<u><b><i>$(printIntervalShortly $LAST_REPORT_PERIOD_MAX_LAG)</i></b></u>"
+            fi
+            if (( LAST_REPORT_PERIOD_TOTAL_LAG2_COUNT > 0 )); then
+            logNotice "Avr/Max tip block age: <u><b><i>$(printIntervalShortly $(( LAST_REPORT_PERIOD_TOTAL_LAG2 / LAST_REPORT_PERIOD_TOTAL_LAG2_COUNT )))</i></b></u>/<u><b><i>$(printIntervalShortly $LAST_REPORT_PERIOD_MAX_LAG2)</i></b></u>"
+            fi
+            if (( LAST_REPORT_PERIOD_TOTAL_LAG3_COUNT > 0 )); then
+            logNotice "Avr/Max last block age: <u><b><i>$(printIntervalShortly $(( LAST_REPORT_PERIOD_TOTAL_LAG3 / LAST_REPORT_PERIOD_TOTAL_LAG3_COUNT )))</i></b></u>/<u><b><i>$(printIntervalShortly $LAST_REPORT_PERIOD_MAX_LAG3)</i></b></u>"
             fi
         else
             logNotice "Statistics for the last $(printInterval $REPORT_INTERVAL no):"
@@ -542,7 +603,13 @@ function logLastPeriod()
             logNotice "  average/max neighbors count: $(( LAST_REPORT_PERIOD_TOTAL_CONNECTIONS / LAST_REPORT_PERIOD_TOTAL_CONNECTIONS_COUNT )) / $LAST_REPORT_PERIOD_MAX_CONNECTIONS"
             fi
             if (( LAST_REPORT_PERIOD_TOTAL_LAG_COUNT > 0 )); then
-            logNotice "  average/max lag in seconds:  $(( LAST_REPORT_PERIOD_TOTAL_LAG / LAST_REPORT_PERIOD_TOTAL_LAG_COUNT )) / $LAST_REPORT_PERIOD_MAX_LAG"
+            logNotice "  average/max lag:             $(printInterval $(( LAST_REPORT_PERIOD_TOTAL_LAG / LAST_REPORT_PERIOD_TOTAL_LAG_COUNT ))) / $(printInterval $LAST_REPORT_PERIOD_MAX_LAG)"
+            fi
+            if (( LAST_REPORT_PERIOD_TOTAL_LAG2_COUNT > 0 )); then
+            logNotice "  average/max tip block age:   $(printInterval $(( LAST_REPORT_PERIOD_TOTAL_LAG2 / LAST_REPORT_PERIOD_TOTAL_LAG2_COUNT ))) / $(printInterval $LAST_REPORT_PERIOD_MAX_LAG2)"
+            fi
+            if (( LAST_REPORT_PERIOD_TOTAL_LAG3_COUNT > 0 )); then
+            logNotice "  average/max last block age:  $(printInterval $(( LAST_REPORT_PERIOD_TOTAL_LAG3 / LAST_REPORT_PERIOD_TOTAL_LAG3_COUNT ))) / $(printInterval $LAST_REPORT_PERIOD_MAX_LAG3)"
             fi
         fi
     }
@@ -573,6 +640,12 @@ function startNewPeriod {
     (( LAST_REPORT_PERIOD_TOTAL_LAG_COUNT = 0 ))
     (( LAST_REPORT_PERIOD_TOTAL_LAG = 0 ))
     (( LAST_REPORT_PERIOD_MAX_LAG = 0 ))
+    (( LAST_REPORT_PERIOD_TOTAL_LAG2_COUNT = 0 ))
+    (( LAST_REPORT_PERIOD_TOTAL_LAG2 = 0 ))
+    (( LAST_REPORT_PERIOD_MAX_LAG2 = 0 ))
+    (( LAST_REPORT_PERIOD_TOTAL_LAG3_COUNT = 0 ))
+    (( LAST_REPORT_PERIOD_TOTAL_LAG3 = 0 ))
+    (( LAST_REPORT_PERIOD_MAX_LAG3 = 0 ))
 }
 
 function exit1 {
