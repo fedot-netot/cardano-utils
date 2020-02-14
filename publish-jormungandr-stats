@@ -14,7 +14,7 @@ usage: $0 -p -i -a -c -r -h
   -a  Bot access token. If not specified then environment variable with name \`TELEGRAM_BOT_AUTH_TOKEN\`
       will be used for authentication. If none specified then telegram output will not be used.
   -c  Telegram channel to which send messages. E.g. \`@CardanoNodesHeartbeat\`. If not specified then
-      the environment variable \`TELEGRAM_BOT_AUTH_TOKEN\` will be used.
+      the environment variable \`TELEGRAM_CHANNEL_ID\` will be used.
   -r  Command which output will be sent to the log. This is optional parameter.
       If unspecified then the next comand will be used: \`$DEFAULT_REPORT_CMD\`
   -h  Show this help.
