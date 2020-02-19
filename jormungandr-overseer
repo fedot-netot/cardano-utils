@@ -13,6 +13,7 @@ DEFAULT_CRITICAL_LAG_IN_SEC=200 # 200 seconds
 DEFAULT_UNBELIVABLE_TIME_WO_BLOCKS_IN_NET_IN_SEC=600 # 600 seconds
 DEFAULT_REPORT_INTERVAL_IN_SEC=60*60 # 1 hour
 DEFAULT_CRITICAL_BOOTSTRAP_DURATION_IN_SEC=20*60 # 20 minutes
+DEFAULT_CRITICAL_REST_ERROR_DURATION_IN_SEC=20 # 20 seconds
 
 START_TIME=$(date +%s)
 LAST_REPORT_PERIOD_START=$START_TIME
@@ -174,6 +175,7 @@ CHECK_INTERVAL=$DEFAULT_CHECK_INTERVAL_IN_SEC
 UNBELIVABLE_TIME_WO_BLOCKS_IN_NET=$DEFAULT_UNBELIVABLE_TIME_WO_BLOCKS_IN_NET_IN_SEC
 REPORT_INTERVAL=$DEFAULT_REPORT_INTERVAL_IN_SEC
 CRITICAL_BOOTSTRAP_DURATION=$DEFAULT_CRITICAL_BOOTSTRAP_DURATION_IN_SEC
+CRITICAL_REST_ERROR_DURATION=$DEFAULT_CRITICAL_REST_ERROR_DURATION_IN_SEC
 T_CHANNEL_ID=$TELEGRAM_CHANNEL_ID
 T_AUTH_TOKEN=$TELEGRAM_BOT_AUTH_TOKEN
 T_MESSAGE_HEADER=
@@ -181,7 +183,8 @@ T_MESSAGE_HEADER=
 
 function showHelp {
     cat <<EOF
-usage: $(basename $0) [-i INTERVAL] [-l INTERVAL] [-w INTERVAL] [-b INTERVAL] [-r INTERVAL] [-L LOG_LEVEL] [-j] [-h]
+usage: $(basename $0) [-i INTERVAL] [-l INTERVAL] [-w INTERVAL] [-b INTERVAL] [-t INTERVAL] [-r INTERVAL] \
+                      [-L LOG_LEVEL] [-j] [-h]
   -i  The frequency at which jormungandr health checks will occure.
       If not specified then $(printInterval $DEFAULT_CHECK_INTERVAL_IN_SEC no) interval will be used.
   -l  Critical lag between \`lastBlockTime\` and \`lastReceivedBlockTime\`. Node will be restarted when this limit
@@ -193,6 +196,8 @@ usage: $(basename $0) [-i INTERVAL] [-l INTERVAL] [-w INTERVAL] [-b INTERVAL] [-
       Default value is $(printInterval $DEFAULT_CRITICAL_BOOTSTRAP_DURATION_IN_SEC no).
   -r  Report inteval. If not specified then default value of $(printInterval $DEFAULT_REPORT_INTERVAL_IN_SEC no)
       will be used.
+  -t  REST response errors critical druration. If node does not respond on REST requests during this period then
+      it will be restarted. Default value - $(printInterval $DEFAULT_CRITICAL_REST_ERROR_DURATION_IN_SEC no).
   -j  Prepare messages for journald severity levels.
   -L  Log level. One of the values \`error\`, \`warn\`, \`info\`, \`debug\`, \`trace\`. Only messages with this and stronger
       severity level will be logged.
@@ -273,7 +278,7 @@ function logTrace {
 
 
 
-while getopts 'i:l:L:w:b:r:a:c:p:jh' c
+while getopts 'i:l:L:w:b:t:r:a:c:p:jh' c
 do
     case $c in
         i) CHECK_INTERVAL=$(printf "%s" $OPTARG | parseInterval)
@@ -300,6 +305,13 @@ do
         b) CRITICAL_BOOTSTRAP_DURATION=$(printf "%s" $OPTARG | parseInterval)
            if [ -z $CRITICAL_BOOTSTRAP_DURATION ] || (( CRITICAL_BOOTSTRAP_DURATION < 0 )); then
                echo 'Wrong value for option `-b`'
+               showHelp;
+               exit 1
+           fi
+           ;;
+        t) CRITICAL_REST_ERROR_DURATION=$(printf "%s" $OPTARG | parseInterval)
+           if [ -z $CRITICAL_REST_ERROR_DURATION ] || (( CRITICAL_REST_ERROR_DURATION < 0 )); then
+               echo 'Wrong value for option `-t`'
                showHelp;
                exit 1
            fi
@@ -686,6 +698,11 @@ do
     fi
 
     if [ -z "$state" ]; then
+        if isBootstrappingState $PREV_state; then
+            incrementBootstrapDuration
+        elif isRunningState $PREV_state; then
+            incrementUptimeDuration
+        fi
         if [ -z "$PREV_CHECK_DATE" ]; then
             if is_number "$CONNECTIONS"; then
                 logError "Jormungandr is started but not responding or something wrong with our script"
@@ -694,7 +711,7 @@ do
                 stopJormungandr
                 startJormungandr
             fi;
-        elif isCriticalLag $CHECK_DATE $PREV_CHECK_DATE; then
+        elif isCriticalLag $CHECK_DATE $PREV_CHECK_DATE $CRITICAL_REST_ERROR_DURATION; then
             logWarn "Starting jormungandr because it not responding last $(printInterval $CRITICAL_LAG_IN_SEC no)."
             stopJormungandr
             startJormungandr
