@@ -349,6 +349,7 @@ state=
 lastBlockTime=
 lastReceivedBlockTime=
 uptime=
+LAST_REGISTERED_UPTIME=
 CHECK_DATE=$NOW
 CONNECTIONS=
 
@@ -386,9 +387,12 @@ function incrementBootstrapDuration {
 function incrementUptimeDuration {
     (( TOTAL_UPTIME_COUNT++ ))
     (( LAST_REPORT_PERIOD_TOTAL_UPTIME_COUNT++ ))
-    (( LAST_UPTIME_DURATION += uptime ))
-    (( TOTAL_UPTIME_DURATION += uptime ))
-    (( LAST_REPORT_PERIOD_TOTAL_UPTIME_DURATION += uptime ))
+    if is_number "$LAST_REGISTERED_UPTIME"; then
+      (( LAST_UPTIME_DURATION += LAST_REGISTERED_UPTIME ))
+      (( TOTAL_UPTIME_DURATION += LAST_REGISTERED_UPTIME ))
+      (( LAST_REPORT_PERIOD_TOTAL_UPTIME_DURATION += LAST_REGISTERED_UPTIME ))
+    fi
+    unset LAST_REGISTERED_UPTIME
 }
 
 function incrementConnectionStatistic {
@@ -476,6 +480,9 @@ function readJormungandrState {
         lastBlockTime=$(date +%s -d$( echo -n "$JSON" | jq -r .lastBlockTime 2>/dev/null) 2>/dev/null)
         lastReceivedBlockTime=$(date +%s -d$( echo -n "$JSON" | jq -r .lastReceivedBlockTime 2>/dev/null) 2>/dev/null)
         uptime=$(echo -n "$JSON" | jq -r .uptime 2>/dev/null)
+    fi
+    if is_number "$uptime"; then
+        LAST_REGISTERED_UPTIME="$uptime"
     fi
     CONNECTIONS=$(netstat -tnp 2>/dev/null| grep -E 'ESTABLISHED.+jormungandr' | cut -c45-65 | sort | uniq | wc -l)
     CHECK_DATE=$(date +%s)
@@ -698,11 +705,6 @@ do
     fi
 
     if [ -z "$state" ]; then
-        if isBootstrappingState $PREV_state; then
-            incrementBootstrapDuration
-        elif isRunningState $PREV_state; then
-            incrementUptimeDuration
-        fi
         if [ -z "$PREV_CHECK_DATE" ]; then
             if is_number "$CONNECTIONS"; then
                 logError "Jormungandr is started but not responding or something wrong with our script"
@@ -716,63 +718,68 @@ do
             stopJormungandr
             startJormungandr
         fi
-    elif isBootstrappingState $state; then
-        if ! isBootstrappingState $PREV_state; then
-            if (( just_restarted )); then
-                logInfo "Bootstrapping..."
-            else
-                logNotice "Bootstrapping..."
-            fi
-            (( TOTAL_BOOTSTRAP_COUNT++ ))
-            (( LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_COUNT++ ))
-        fi
-        if isCriticalLag ${LAST_BOOTSTRAP_START:-$CHECK_DATE} $CHECK_DATE $CRITICAL_BOOTSTRAP_DURATION; then
-            logWarn "Restarting node because of bootstrap process took more than $(printInterval $CRITICAL_BOOTSTRAP_DURATION)"
-            if restartJormungandr; then
-                (( JUST_RESTARTED = 1 ))
-            fi
-        fi
-        incrementBootstrapDuration
-        incrementDowntime
-    elif isRunningState $state; then
-        unset LAST_BOOTSTRAP_START
-        incrementConnectionStatistic
-        incrementLagStatistic
-        if isBootstrappingState $PREV_state; then
-            incrementBootstrapDuration
-            logNotice "Node bootstrapped in $LAST_BOOTSTRAP_DURATION seconds ($(printInterval $LAST_BOOTSTRAP_DURATION))"
-        elif ! isRunningState $PREV_state; then
-            logNotice "Node is running"
-        else
-            if isCriticalLag $uptime 0 && isCriticalLag ${lastReceivedBlockTime:-$CHECK_DATE} $lastBlockTime; then
-                logWarn "Restarting node because of some blocks did not received during $(printInterval $CRITICAL_LAG_IN_SEC no)"
-                logInfo "Uptime before restart: $uptime seconds ($(printInterval $uptime))"
-                incrementDowntime
-                incrementUptimeDuration
-                if restartJormungandr; then
-                    (( JUST_RESTARTED = 1 ))
-                fi
-            elif isCriticalLag $CHECK_DATE ${lastReceivedBlockTime:-$CHECK_DATE} $UNBELIVABLE_TIME_WO_BLOCKS_IN_NET; then
-                logWarn "Restarting node because no one block has been received during last $(printInterval $UNBELIVABLE_TIME_WO_BLOCKS_IN_NET no)"
-                logInfo "Uptime before restart: $uptime seconds ($(printInterval $uptime))"
-                incrementDowntime
-                incrementUptimeDuration
-                if restartJormungandr; then
-                    (( JUST_RESTARTED = 1 ))
-                fi
-            else
-                incrementUptime
-            fi
-        fi
-        (( LAST_BOOTSTRAP_DURATION = 0 ))
     else
-        logError "Unknown node state: $state"
+        if isRunningState $PREV_state && ! isRunningState $state; then
+            incrementUptimeDuration
+        fi
+        if isBootstrappingState $state; then
+            if ! isBootstrappingState $PREV_state; then
+                if (( just_restarted )); then
+                    logInfo "Bootstrapping..."
+                else
+                    logNotice "Bootstrapping..."
+                fi
+                (( TOTAL_BOOTSTRAP_COUNT++ ))
+                (( LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_COUNT++ ))
+            fi
+            if isCriticalLag ${LAST_BOOTSTRAP_START:-$CHECK_DATE} $CHECK_DATE $CRITICAL_BOOTSTRAP_DURATION; then
+                logWarn "Restarting node because of bootstrap process took more than $(printInterval $CRITICAL_BOOTSTRAP_DURATION)"
+                if restartJormungandr; then
+                    (( JUST_RESTARTED = 1 ))
+                fi
+            fi
+            incrementBootstrapDuration
+            incrementDowntime
+        elif isRunningState $state; then
+            unset LAST_BOOTSTRAP_START
+            incrementConnectionStatistic
+            incrementLagStatistic
+            if isBootstrappingState $PREV_state; then
+                incrementBootstrapDuration
+                logNotice "Node bootstrapped in $LAST_BOOTSTRAP_DURATION seconds ($(printInterval $LAST_BOOTSTRAP_DURATION))"
+            elif ! isRunningState $PREV_state; then
+                logNotice "Node is running"
+            else
+                if isCriticalLag $uptime 0 && isCriticalLag ${lastReceivedBlockTime:-$CHECK_DATE} $lastBlockTime; then
+                    logWarn "Restarting node because of some blocks did not received during $(printInterval $CRITICAL_LAG_IN_SEC no)"
+                    logInfo "Uptime before restart: $uptime seconds ($(printInterval $uptime))"
+                    incrementDowntime
+                    if restartJormungandr; then
+                        (( JUST_RESTARTED = 1 ))
+                    fi
+                elif isCriticalLag $CHECK_DATE ${lastReceivedBlockTime:-$CHECK_DATE} $UNBELIVABLE_TIME_WO_BLOCKS_IN_NET; then
+                    logWarn "Restarting node because no one block has been received during last $(printInterval $UNBELIVABLE_TIME_WO_BLOCKS_IN_NET no)"
+                    logInfo "Uptime before restart: $uptime seconds ($(printInterval $uptime))"
+                    incrementDowntime
+                    if restartJormungandr; then
+                        (( JUST_RESTARTED = 1 ))
+                    fi
+                else
+                    incrementUptime
+                fi
+            fi
+            (( LAST_BOOTSTRAP_DURATION = 0 ))
+        else
+            logError "Unknown node state: $state"
+        fi
     fi
 
     if isRunningState $state || isBootstrappingState $state; then
         PREV_CHECK_DATE=$CHECK_DATE
     fi
-    PREV_state=$state
+    if [ -n "$state" ]; then
+        PREV_state=$state
+    fi
 
     sleep "${CHECK_INTERVAL}s"
     (( CHECK_CYCLES_FROM_START += 1 ))
