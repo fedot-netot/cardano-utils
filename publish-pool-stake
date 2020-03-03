@@ -4,8 +4,8 @@
 
 function showHelp() {
     cat <<EOF
-usage: $0 [-p POOL_ID ] [-n HEADER] [-r INTERVAL] [-a TELEGRAM_ACCESS_TOKEN] [-c CHANNEL_ID]
-          [-L LOG_LEVEL] -h
+usage: $0 -p POOL_ID [-n HEADER] [-r INTERVAL] [-a TELEGRAM_ACCESS_TOKEN] [-c CHANNEL_ID]
+          [-L LOG_LEVEL] [-j] [-h]
   -p  Pool id. Mandatory parameter.
   -n  Pool name/identifier. You can use the ticker of your pool here.
   -r  Report inteval. If not specified then send info only once and exit.
