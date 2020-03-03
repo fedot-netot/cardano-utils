@@ -1,0 +1,185 @@
+#!/bin/bash
+
+. cardano-utils-common
+
+function showHelp() {
+    cat <<EOF
+usage: $0 [-p POOL_ID ] [-n HEADER] [-r INTERVAL] [-a TELEGRAM_ACCESS_TOKEN] [-c CHANNEL_ID]
+          [-L LOG_LEVEL] -h
+  -p  Pool id. Mandatory parameter.
+  -n  Pool name/identifier. You can use the ticker of your pool here.
+  -r  Report inteval. If not specified then send info only once and exit.
+  -a  Bot access token. If not specified then environment variable with name \`TELEGRAM_BOT_AUTH_TOKEN\`
+      will be used for authentication. If none specified then telegram output will not be used.
+  -c  Telegram channel to which send messages. E.g. \`@CardanoNodesHeartbeat\`. If not specified then
+      the environment variable \`TELEGRAM_CHANNEL_ID\` will be used.
+  -L  Log level. One of the values \`error\`, \`warn\`, \`info\`, \`debug\`, \`trace\`. Only messages with
+      this and stronger severity level will be logged.
+  -j  Prepare messages for journald severity levels.
+  -h  Show this help.
+
+This scrip collect and report pool stack information of the jormungandr node to stdout and the telegram
+channel via the Telegram Bot.
+
+By default, it is assumed that all time INTERVALs are set in seconds. But you can explicitly specify time units:
+\`s\` - seconds, \`m\` - minutes, \`h\` - hours, \`d\` - days, \`w\` - weeks. E.g. \`25s\`, \`15m\`, \`1h\`.
+EOF
+}
+
+
+CHANNEL_ID="$TELEGRAM_CHANNEL_ID"
+# Access token for Telegram Bot API
+T_AUTH_TOKEN=$TELEGRAM_BOT_AUTH_TOKEN
+
+while getopts 'p:n:r:a:c:L:jh' c
+do
+    case $c in
+        p) POOL_ID="$OPTARG" ;;
+        n) POOL_NAME="$OPTARG" ;;
+        r) REPORT_INTERVAL=$(printf "%s" $OPTARG | parseInterval)
+           if [ -z $REPORT_INTERVAL ] || (( REPORT_INTERVAL < 0 )); then
+               echo 'Wrong value for option `-r`'
+               showHelp;
+               exit 1
+           fi
+           ;;
+        a) T_AUTH_TOKEN="$OPTARG" ;;
+        c) T_CHANNEL_ID="$OPTARG" ;;
+        L) case "$OPTARG" in
+               error) LOG_LEVEL=1;;
+               warn) LOG_LEVEL=2;;
+               info) LOG_LEVEL=3;;
+               debug) LOG_LEVEL=4;;
+               trace) LOG_LEVEL=5;;
+               *) echo 'Wrong value for option `-L`'; showHelp; exit 1;;
+           esac;;
+        j) WITH_JOURNALD=1;;
+        h) showHelp; exit 0 ;;
+    esac
+done
+
+if [ -z "$POOL_ID" ]; then
+    echo 'Parameter `-p` is mandatory'
+    showHelp
+    exit 1
+fi
+
+function fetchStake {
+    local JSON ERR_MSG
+    unset POOL_INFO_OUTPUT
+
+    eval "$( (jcli rest v0 stake-pool get --output-format=json $POOL_ID) 2> >(ERR_MSG=$(cat); declare -p ERR_MSG) > >(JSON=$(cat); declare -p JSON) )"
+    if [ -n "$ERR_MSG" ]; then logError "$ERR_MSG"; fi
+    if [ -n "$JSON" ]; then
+        POOL_INFO_OUTPUT="$JSON"
+        STAKE=$(echo $JSON | jq -r .total_stake)
+    fi
+}
+
+function fetchActveStake {
+    local JSON ERR_MSG
+    unset STAKE_INFO_OUTPUT
+    eval "$( (jcli rest v0 stake get --output-format=json | jq "{ epoch, stake: (.stake.pools[] | select(.[0]==\"$POOL_ID\") | .[1] ) }") 2> >(ERR_MSG=$(cat); declare -p ERR_MSG) > >(JSON=$(cat); declare -p JSON) )"
+    if [ -n "$ERR_MSG" ]; then logError "$ERR_MSG"; fi
+    if [ -n "$JSON" ]; then
+        STAKE_INFO_OUTPUT="$JSON"
+        ACTIVE_STAKE_EPOCH=$(echo -n $JSON | jq -r .epoch)
+        ACTIVE_STAKE=$(echo -n $JSON | jq -r .stake)
+    fi
+}
+
+function fetchAll {
+    fetchStake
+    fetchActveStake
+}
+
+LAST_REPORTED_STAKE=
+LAST_REPORTED_ACTIVE_STAKE=
+
+function conditional_ticker {
+    if [ -n "$POOL_NAME" ]; then
+        echo " of \`$POOL_NAME\`"
+    fi
+}
+
+function qs {
+    echo -n "<u><b><i>"
+}
+function qe {
+    echo -n "</i></b></u>"
+}
+
+function printReport {
+    local SIMPLE_LOGGING=$1
+    local CONDITIONAL_TICKER=$(conditional_ticker $( [ "$SIMPLE_LOGGING" == "yes" ] && echo -n no || echo -n yes ))
+    if [ "$SIMPLE_LOGGING" == "yes" ]; then
+        if [ -n "$STAKE" ]; then
+            if [ -z "$LAST_REPORTED_STAKE" ]; then
+                logNotice "Delegated stake is $(qs)$(printStake $STAKE)$(qe)"
+            elif (( STAKE != LAST_REPORTED_STAKE )); then
+                logNotice "Delegated stake changed by $(qs)$(printStake $((STAKE - LAST_REPORTED_STAKE)))$(qe) from $(qs)$(printStake $LAST_REPORTED_STAKE)$(qe) to $(qs)$(printStake $STAKE)$(qe)"
+            fi
+        fi
+        if [ -n "$ACTIVE_STAKE" ]; then
+            if [ -z "$LAST_REPORTED_ACTIVE_STAKE" ]; then
+                logNotice "Active stake is $(qs)$(printStake $ACTIVE_STAKE)$(qe)"
+            elif (( ACTIVE_STAKE != LAST_REPORTED_ACTIVE_STAKE )); then
+                logNotice "Active stake changed by $(qs)$(printStake $(( ACTIVE_STAKE - LAST_REPORTED_ACTIVE_STAKE )) )$(qe) from $(qs)$(printStake $LAST_REPORTED_ACTIVE_STAKE)$(qe) to $(qs)$(printStake $ACTIVE_STAKE)$(qe)"
+            fi
+        fi
+    else
+        if [ -n "$STAKE" ]; then
+            if [ -z "$LAST_REPORTED_STAKE" ]; then
+                logNotice "Delegated stake$(conditional_ticker) is $(printStake $STAKE)"
+            elif (( STAKE != LAST_REPORTED_STAKE )); then
+                logNotice "Delegated stake$(conditional_ticker) changed by $(printStake $(( STAKE - LAST_REPORTED_STAKE )) ) from $(printStake $LAST_REPORTED_STAKE) to $(printStake $STAKE)"
+            fi
+        fi
+        if [ -n "$ACTIVE_STAKE" ]; then
+            if [ -z "$LAST_REPORTED_ACTIVE_STAKE" ]; then
+                logNotice "Active stake$(conditional_ticker) is $(printStake $ACTIVE_STAKE)"
+            elif (( ACTIVE_STAKE != LAST_REPORTED_ACTIVE_STAKE )); then
+                logNotice "Active stake$(conditional_ticker) changed by $(printStake $(( ACTIVE_STAKE - LAST_REPORTED_ACTIVE_STAKE )) ) from $(printStake $LAST_REPORTED_ACTIVE_STAKE) to $(printStake $ACTIVE_STAKE)"
+            fi
+        fi
+    fi
+}
+
+function sendToTelegram {
+    if [ -n "$T_AUTH_TOKEN" ] && [ -n "$T_CHANNEL_ID" ]; then
+        local INPUT=$(cat)
+        if [ -n "$INPUT" ]; then
+            echo -e "${POOL_NAME:+${POOL_NAME}\n\n}${INPUT}" | \
+                curl --silent \
+                     --request POST https://api.telegram.org/bot$T_AUTH_TOKEN/sendMessage \
+                     --data parse_mode=HTML \
+                     --data chat_id="$T_CHANNEL_ID" \
+                     --data-urlencode text@- \
+                     > /dev/null
+        fi
+    fi
+}
+
+function sendToLog {
+    local INPUT=$(cat)
+    if [ -n "$INPUT" ]; then
+        echo -e "${INPUT}"
+    fi
+}
+
+while :;
+do
+    fetchAll
+    printReport "no"  | sendToLog
+    printReport "yes" | sendToTelegram
+    if [ -n "$STAKE" ]; then
+        LAST_REPORTED_STAKE=$STAKE
+    fi
+    if [ -n "$ACTIVE_STAKE" ]; then
+        LAST_REPORTED_ACTIVE_STAKE=$ACTIVE_STAKE
+    fi
+    if [ -z $REPORT_INTERVAL ]; then
+      exit 0
+    fi
+    sleep "${REPORT_INTERVAL}s"
+done

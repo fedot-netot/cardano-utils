@@ -1,0 +1,174 @@
+# -*- mode: shell-script -*-
+
+WITH_JOURNALD=0
+LOG_LEVEL=3 # 1 - error, 2 - warn, 3 - info, 4 - debug, 5 - trace
+
+function is_number {
+  if [[ "$1" =~ ^[[:digit:]]+$ ]]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+function parseInterval {
+    local interval=$(cat)
+    local result
+    if is_number $interval; then
+        (( result = interval ))
+    elif is_number ${interval: : -1}; then
+        local value=${interval: : -1}
+        local unit=${interval: $(( ${#interval} -1 ))  : 1}
+        case $unit in
+            s) (( result = value ));;
+            m) (( result = value * 60 ));;
+            h) (( result = value * 60 * 60 ));;
+            d) (( result = value * 60 * 60 * 24 ));;
+            w) (( result = value * 60 * 60 * 24 * 7 ));;
+            *) exit 1;;
+        esac
+    fi
+    if [ -n "$result" ]; then
+        printf "%d" $result
+    else
+        return 1
+    fi
+}
+
+function printInterval {
+    local T=$1
+    local always_show_seconds=${2:-"no"}
+    if ! is_number $T; then
+        return 1
+    fi
+    if (( T < 0 )); then
+        (( T = -T ))
+        local sign = "minus "
+    fi
+    local D=$((T/60/60/24))
+    local H=$((T/60/60%24))
+    local M=$((T/60%60))
+    local S=$((T%60))
+
+    printf '%s' $sign
+    if (( D > 0 )); then
+        printf '%d day' $D
+        (( D > 1 )) && printf 's'
+    fi
+    if (( H > 0 )); then
+        (( D > 0 )) && printf ' '
+        printf '%d hour' $H
+        (( H >  1 )) && printf 's'
+    fi
+    if (( M > 0 )); then
+        (( D > 0 || H > 0 )) && printf ' '
+        printf '%d minute' $M
+        (( M > 1 )) && printf 's'
+    fi
+    if (( S > 0 || $T == 0 )) || [ "$always_show_seconds" == "yes" ]; then
+        (( D > 0 || H > 0 || M > 0 )) && printf ' and '
+        printf '%d second' $S
+        (( S != 1 )) && printf 's'
+    fi
+}
+
+function printIntervalShortly {
+    local T=$1
+    if ! is_number $T; then
+        return 1
+    fi
+    if (( T < 0 )); then
+        (( T = -T ))
+        local sign = "- "
+    fi
+    local D=$((T/60/60/24))
+    local H=$((T/60/60%24))
+    local M=$((T/60%60))
+    local S=$((T%60))
+    printf "%s" $sign
+    (( D > 0 )) && printf '%dd' $D
+    if (( H > 0 )); then
+        (( D > 0 )) && printf ' '
+        printf '%dh' $H
+    fi
+    if (( M > 0 )); then
+        (( D > 0 || H > 0 )) && printf ' '
+        printf '%dm' $M
+    fi
+    if (( S > 0 || T == 0 )); then
+        (( D > 0 || H > 0 || M > 0 )) && printf ' '
+        printf '%ds' $S
+    fi
+}
+
+
+function logError {
+    if (( LOG_LEVEL >= 1  )); then
+        if [ "$SIMPLE_LOGGING" == "yes" ]; then
+            echo "$1"
+        else
+            (( WITH_JOURNALD )) && echo -n '<3>'
+            echo -e "\e[31m$1\e[0m" >&2
+        fi
+    fi
+}
+
+function logWarn {
+    if (( LOG_LEVEL >= 2  )); then
+        if [ "$SIMPLE_LOGGING" == "yes" ]; then
+            echo "$1"
+        else
+            (( WITH_JOURNALD )) && echo -n '<4>'
+            echo -e "\e[93m$1\e[0m" >&2
+        fi
+    fi
+}
+
+function logNotice {
+    if (( LOG_LEVEL >= 3  )); then
+        if [ "$SIMPLE_LOGGING" == "yes" ]; then
+            echo "$1"
+        else
+            (( WITH_JOURNALD )) && echo -n '<5>'
+            echo -e "\e[1m$1\e[0m"
+        fi
+    fi
+}
+
+function logInfo {
+    if (( LOG_LEVEL >= 3  )); then
+        if [ "$SIMPLE_LOGGING" == "yes" ]; then
+            echo "$1"
+        else
+            (( WITH_JOURNALD )) && echo -n '<6>'
+            echo -e "$1"
+        fi
+    fi
+}
+
+function logDebug {
+    if (( LOG_LEVEL >= 5  )); then
+        if [ "$SIMPLE_LOGGING" == "yes" ]; then
+            echo "$1"
+        else
+            (( WITH_JOURNALD )) && echo -n '<7>'
+            echo -e "\e[2m$1\e[0m"
+        fi
+    fi
+}
+
+function logTrace {
+    logDebug $1
+}
+
+
+function lovelaces2ada {
+    local VALUE=$1
+    local SCALE=${2:-2}
+    printf "%'.${SCALE}f" $(echo "scale=6; ${VALUE}/1000000" | bc -l)
+}
+
+function printStake {
+    local LOVELACES=$1
+    echo $(lovelaces2ada $LOVELACES) ADA
+}
