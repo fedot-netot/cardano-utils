@@ -1,0 +1,177 @@
+#!/bin/bash
+
+. cardano-utils-common
+
+
+function showHelp() {
+    cat <<EOF
+usage: $0 [-e ENCLAVE] [-n HEADER] [-i INTERVAL] [-a TELEGRAM_ACCESS_TOKEN] [-c CHANNEL_ID]
+          [-d] [-L LOG_LEVEL] [-j] [-h]
+  -e  Enclave leader id. If specified then only slots of this enclave leader will be counted.
+  -n  Pool name/identifier. You can use the ticker of your pool here.
+  -i  Interval that will be used for regular checking.
+      If not specified then send info only once and exit.
+  -d  Publish only in the case of changes. Do not publish state on the moment of start\.
+  -a  Bot access token. If not specified then environment variable with name \`TELEGRAM_BOT_AUTH_TOKEN\`
+      will be used for authentication. If none specified then telegram output will not be used.
+  -c  Telegram channel to which send messages. E.g. \`@CardanoNodesHeartbeat\`. If not specified then
+      the environment variable \`TELEGRAM_CHANNEL_ID\` will be used.
+  -L  Log level. One of the values \`error\`, \`warn\`, \`info\`, \`debug\`, \`trace\`. Only messages with
+      this and stronger severity level will be logged.
+  -j  Prepare messages for journald severity levels.
+  -h  Show this help.
+
+This scrip collect and report of the own slots information of the jormungandr node to stdout and the telegram
+channel via the Telegram Bot.
+
+By default, it is assumed that all time INTERVALs are set in seconds. But you can explicitly specify time units:
+\`s\` - seconds, \`m\` - minutes, \`h\` - hours, \`d\` - days, \`w\` - weeks. E.g. \`25s\`, \`15m\`, \`1h\`.
+EOF
+}
+
+
+CHANNEL_ID="$TELEGRAM_CHANNEL_ID"
+# Access token for Telegram Bot API
+T_AUTH_TOKEN=$TELEGRAM_BOT_AUTH_TOKEN
+
+while getopts 'e:n:i:a:c:L:djh' c
+do
+    case $c in
+        e) ENCLAVE_LEADER_ID="$OPTARG" ;;
+        n) POOL_NAME="$OPTARG" ;;
+        i) INTERVAL=$(printf "%s" $OPTARG | parseInterval)
+           if [ -z $INTERVAL ] || (( INTERVAL < 0 )); then
+               echo 'Wrong value for option `-r`'
+               showHelp;
+               exit 1
+           fi
+           ;;
+        a) T_AUTH_TOKEN="$OPTARG" ;;
+        c) T_CHANNEL_ID="$OPTARG" ;;
+        L) case "$OPTARG" in
+               error) LOG_LEVEL=1;;
+               warn) LOG_LEVEL=2;;
+               info) LOG_LEVEL=3;;
+               debug) LOG_LEVEL=4;;
+               trace) LOG_LEVEL=5;;
+               *) echo 'Wrong value for option `-L`'; showHelp; exit 1;;
+           esac;;
+        d) ONLY_CHANGES=1 ;;
+        j) WITH_JOURNALD=1;;
+        h) showHelp; exit 0 ;;
+    esac
+done
+
+function fetchCurrentEpoch {
+    local JSON ERR_MSG
+    eval "$( (jcli rest v0 node stats get --output-format=json | jq -r .lastBlockDate | cut -d. -f1) 2> >(ERR_MSG=$(cat); declare -p ERR_MSG) > >(JSON=$(cat); declare -p JSON) )"
+    if [ -n "$ERR_MSG" ]; then logError "$ERR_MSG"; fi
+    if [ -n "$JSON" ]; then
+        echo -n "$JSON"
+    fi
+}
+
+function fetchCountOfBlocksForEpoch {
+    local EPOCH=$1
+    local ENCLAVE_LEADER=$2
+    local JSON ERR_MSG
+
+    eval "$( (jcli rest v0 leaders logs get --output-format=json | jq "[ (.[] | select ( [(.scheduled_at_date|startswith(\"$EPOCH.\")), .enclave_leader_id == ${ENCLAVE_LEADER_ID:-.enclave_leader_id}] | all)) ] | length") 2> >(ERR_MSG=$(cat); declare -p ERR_MSG) > >(JSON=$(cat); declare -p JSON) )"
+    if [ -n "$ERR_MSG" ]; then logError "$ERR_MSG"; fi
+    if [ -n "$JSON" ]; then
+        echo -n $JSON
+    fi
+}
+
+function fetchAll {
+    fetchStake
+    fetchActveStake
+}
+
+CURRENT_EPOCH=
+CURRENT_EPOCH_BLOCK_COUNT=
+LAST_REPORTED_EPOCH=
+
+function conditional_ticker {
+    if [ -n "$POOL_NAME" ]; then
+        echo " for $POOL_NAME"
+    fi
+}
+
+function qs {
+    echo -n "<u><b><i>"
+}
+function qe {
+    echo -n "</i></b></u>"
+}
+
+function printReport {
+    local SIMPLE_LOGGING=$1
+
+    if [ "$SIMPLE_LOGGING" == "yes" ]; then
+        if [ -n "$CURRENT_EPOCH" ] && is_number $CURRENT_EPOCH_BLOCK_COUNT; then
+            if ([ -z "$ONLY_CHANGES" ] || [ -n "$LAST_REPORTED_EPOCH" ] ) && (( CURRENT_EPOCH != LAST_REPORTED_EPOCH )); then
+                if (( CURRENT_EPOCH_BLOCK_COUNT == 1 )); then
+                    logNotice "$(qs)${CURRENT_EPOCH_BLOCK_COUNT}$(qe) slot was allocated for the epoch $(qs)${CURRENT_EPOCH}$(qe)"
+                else
+                    logNotice "$(qs)${CURRENT_EPOCH_BLOCK_COUNT}$(qe) slots were allocated for the epoch $(qs)${CURRENT_EPOCH}$(qe)"
+                fi
+            fi
+        fi
+    else
+        if [ -n "$CURRENT_EPOCH" ] && is_number $CURRENT_EPOCH_BLOCK_COUNT; then
+            if ([ -z "$ONLY_CHANGES" ] || [ -n "$LAST_REPORTED_EPOCH" ] ) && (( CURRENT_EPOCH != LAST_REPORTED_EPOCH )); then
+                if (( CURRENT_EPOCH_BLOCK_COUNT == 1 )); then
+                    logNotice "${CURRENT_EPOCH_BLOCK_COUNT} slot was allocated for the epoch ${CURRENT_EPOCH}$(conditional_ticker)"
+                else
+                    logNotice "${CURRENT_EPOCH_BLOCK_COUNT} slots were allocated for the epoch ${CURRENT_EPOCH}$(conditional_ticker)"
+                fi
+            fi
+        fi
+    fi
+}
+
+function sendToTelegram {
+    if [ -n "$T_AUTH_TOKEN" ] && [ -n "$T_CHANNEL_ID" ]; then
+        local INPUT=$(cat)
+        if [ -n "$INPUT" ]; then
+            echo -e "${POOL_NAME:+${POOL_NAME}\n\n}${INPUT}" | \
+                curl --silent \
+                     --request POST https://api.telegram.org/bot$T_AUTH_TOKEN/sendMessage \
+                     --data parse_mode=HTML \
+                     --data chat_id="$T_CHANNEL_ID" \
+                     --data-urlencode text@- \
+                     > /dev/null
+        fi
+    fi
+}
+
+function sendToLog {
+    local INPUT=$(cat)
+    if [ -n "$INPUT" ]; then
+        echo -e "${INPUT}"
+    fi
+}
+
+while :;
+do
+    _epoch=$(fetchCurrentEpoch)
+    if is_number $_epoch; then
+        _count=$(fetchCountOfBlocksForEpoch $_epoch)
+        if is_number $_count; then
+            CURRENT_EPOCH=$_epoch
+            CURRENT_EPOCH_BLOCK_COUNT=$_count
+            printReport "no"  | sendToLog
+            printReport "yes" | sendToTelegram
+            LAST_REPORTED_EPOCH=$CURRENT_EPOCH
+        else
+            logError "Cannot get count of the slots for epoch \`${_epoch}\`"
+        fi
+    else
+        logError "Cannot get current epoch number"
+    fi
+    if [ -z $INTERVAL ]; then
+      exit 0
+    fi
+    sleep "${INTERVAL}s"
+done
