@@ -118,14 +118,14 @@ function printReport {
         if [ -n "$STAKE" ]; then
             if [ -z "$LAST_REPORTED_STAKE" ] && [ -z "$ONLY_CHANGES" ]; then
                 logNotice "Delegated stake is $(qs)$(printStake $STAKE)$(qe)"
-            elif (( STAKE != LAST_REPORTED_STAKE )); then
+            elif [ -n "$LAST_REPORTED_STAKE" ] && (( STAKE != LAST_REPORTED_STAKE )); then
                 logNotice "Delegated stake changed by $(qs)$(printStake $((STAKE - LAST_REPORTED_STAKE)))$(qe) from $(qs)$(printStake $LAST_REPORTED_STAKE)$(qe) to $(qs)$(printStake $STAKE)$(qe)"
             fi
         fi
         if [ -n "$ACTIVE_STAKE" ]; then
             if [ -z "$LAST_REPORTED_ACTIVE_STAKE" ] && [ -z "$ONLY_CHANGES" ]; then
                 logNotice "Active stake is $(qs)$(printStake $ACTIVE_STAKE)$(qe)"
-            elif (( ACTIVE_STAKE != LAST_REPORTED_ACTIVE_STAKE )); then
+            elif [ -n "$LAST_REPORTED_ACTIVE_STAKE" ] && (( ACTIVE_STAKE != LAST_REPORTED_ACTIVE_STAKE )); then
                 logNotice "Active stake changed by $(qs)$(printStake $(( ACTIVE_STAKE - LAST_REPORTED_ACTIVE_STAKE )) )$(qe) from $(qs)$(printStake $LAST_REPORTED_ACTIVE_STAKE)$(qe) to $(qs)$(printStake $ACTIVE_STAKE)$(qe)"
             fi
         fi
@@ -133,14 +133,14 @@ function printReport {
         if [ -n "$STAKE" ]; then
             if [ -z "$LAST_REPORTED_STAKE" ] && [ -z "$ONLY_CHANGES" ]; then
                 logNotice "Delegated stake$(conditional_ticker) is $(printStake $STAKE)"
-            elif (( STAKE != LAST_REPORTED_STAKE )); then
+            elif [ -n "$LAST_REPORTED_STAKE" ] && (( STAKE != LAST_REPORTED_STAKE )); then
                 logNotice "Delegated stake$(conditional_ticker) changed by $(printStake $(( STAKE - LAST_REPORTED_STAKE )) ) from $(printStake $LAST_REPORTED_STAKE) to $(printStake $STAKE)"
             fi
         fi
         if [ -n "$ACTIVE_STAKE" ]; then
             if [ -z "$LAST_REPORTED_ACTIVE_STAKE" ] && [ -z "$ONLY_CHANGES" ]; then
                 logNotice "Active stake$(conditional_ticker) is $(printStake $ACTIVE_STAKE)"
-            elif (( ACTIVE_STAKE != LAST_REPORTED_ACTIVE_STAKE )); then
+            elif [ -n "$LAST_REPORTED_ACTIVE_STAKE" ] &&  (( ACTIVE_STAKE != LAST_REPORTED_ACTIVE_STAKE )); then
                 logNotice "Active stake$(conditional_ticker) changed by $(printStake $(( ACTIVE_STAKE - LAST_REPORTED_ACTIVE_STAKE )) ) from $(printStake $LAST_REPORTED_ACTIVE_STAKE) to $(printStake $ACTIVE_STAKE)"
             fi
         fi
