@@ -5,10 +5,11 @@
 function showHelp() {
     cat <<EOF
 usage: $0 -p POOL_ID [-n HEADER] [-r INTERVAL] [-a TELEGRAM_ACCESS_TOKEN] [-c CHANNEL_ID]
-          [-L LOG_LEVEL] [-j] [-h]
+          [-d] [-L LOG_LEVEL] [-j] [-h]
   -p  Pool id. Mandatory parameter.
   -n  Pool name/identifier. You can use the ticker of your pool here.
   -r  Report inteval. If not specified then send info only once and exit.
+  -d  Publish only in the case of changes. Do not publish state on the moment of start\.
   -a  Bot access token. If not specified then environment variable with name \`TELEGRAM_BOT_AUTH_TOKEN\`
       will be used for authentication. If none specified then telegram output will not be used.
   -c  Telegram channel to which send messages. E.g. \`@CardanoNodesHeartbeat\`. If not specified then
@@ -31,7 +32,7 @@ CHANNEL_ID="$TELEGRAM_CHANNEL_ID"
 # Access token for Telegram Bot API
 T_AUTH_TOKEN=$TELEGRAM_BOT_AUTH_TOKEN
 
-while getopts 'p:n:r:a:c:L:jh' c
+while getopts 'p:n:r:a:c:L:jdh' c
 do
     case $c in
         p) POOL_ID="$OPTARG" ;;
@@ -53,6 +54,7 @@ do
                trace) LOG_LEVEL=5;;
                *) echo 'Wrong value for option `-L`'; showHelp; exit 1;;
            esac;;
+        d) ONLY_CHANGES=1 ;;
         j) WITH_JOURNALD=1;;
         h) showHelp; exit 0 ;;
     esac
@@ -114,14 +116,14 @@ function printReport {
     local CONDITIONAL_TICKER=$(conditional_ticker $( [ "$SIMPLE_LOGGING" == "yes" ] && echo -n no || echo -n yes ))
     if [ "$SIMPLE_LOGGING" == "yes" ]; then
         if [ -n "$STAKE" ]; then
-            if [ -z "$LAST_REPORTED_STAKE" ]; then
+            if [ -z "$LAST_REPORTED_STAKE" ] && [ -z "$ONLY_CHANGES" ]; then
                 logNotice "Delegated stake is $(qs)$(printStake $STAKE)$(qe)"
             elif (( STAKE != LAST_REPORTED_STAKE )); then
                 logNotice "Delegated stake changed by $(qs)$(printStake $((STAKE - LAST_REPORTED_STAKE)))$(qe) from $(qs)$(printStake $LAST_REPORTED_STAKE)$(qe) to $(qs)$(printStake $STAKE)$(qe)"
             fi
         fi
         if [ -n "$ACTIVE_STAKE" ]; then
-            if [ -z "$LAST_REPORTED_ACTIVE_STAKE" ]; then
+            if [ -z "$LAST_REPORTED_ACTIVE_STAKE" ] && [ -z "$ONLY_CHANGES" ]; then
                 logNotice "Active stake is $(qs)$(printStake $ACTIVE_STAKE)$(qe)"
             elif (( ACTIVE_STAKE != LAST_REPORTED_ACTIVE_STAKE )); then
                 logNotice "Active stake changed by $(qs)$(printStake $(( ACTIVE_STAKE - LAST_REPORTED_ACTIVE_STAKE )) )$(qe) from $(qs)$(printStake $LAST_REPORTED_ACTIVE_STAKE)$(qe) to $(qs)$(printStake $ACTIVE_STAKE)$(qe)"
@@ -129,14 +131,14 @@ function printReport {
         fi
     else
         if [ -n "$STAKE" ]; then
-            if [ -z "$LAST_REPORTED_STAKE" ]; then
+            if [ -z "$LAST_REPORTED_STAKE" ] && [ -z "$ONLY_CHANGES" ]; then
                 logNotice "Delegated stake$(conditional_ticker) is $(printStake $STAKE)"
             elif (( STAKE != LAST_REPORTED_STAKE )); then
                 logNotice "Delegated stake$(conditional_ticker) changed by $(printStake $(( STAKE - LAST_REPORTED_STAKE )) ) from $(printStake $LAST_REPORTED_STAKE) to $(printStake $STAKE)"
             fi
         fi
         if [ -n "$ACTIVE_STAKE" ]; then
-            if [ -z "$LAST_REPORTED_ACTIVE_STAKE" ]; then
+            if [ -z "$LAST_REPORTED_ACTIVE_STAKE" ] && [ -z "$ONLY_CHANGES" ]; then
                 logNotice "Active stake$(conditional_ticker) is $(printStake $ACTIVE_STAKE)"
             elif (( ACTIVE_STAKE != LAST_REPORTED_ACTIVE_STAKE )); then
                 logNotice "Active stake$(conditional_ticker) changed by $(printStake $(( ACTIVE_STAKE - LAST_REPORTED_ACTIVE_STAKE )) ) from $(printStake $LAST_REPORTED_ACTIVE_STAKE) to $(printStake $ACTIVE_STAKE)"
