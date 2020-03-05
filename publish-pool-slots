@@ -5,7 +5,7 @@
 
 function showHelp() {
     cat <<EOF
-usage: $0 [-e ENCLAVE] [-n HEADER] [-i INTERVAL] [-a TELEGRAM_ACCESS_TOKEN] [-c CHANNEL_ID]
+usage: $(basename $0) [-e ENCLAVE] [-n HEADER] [-i INTERVAL] [-a TELEGRAM_ACCESS_TOKEN] [-c CHANNEL_ID]
           [-d] [-L LOG_LEVEL] [-j] [-h]
   -e  Enclave leader id. If specified then only slots of this enclave leader will be counted.
   -n  Pool name/identifier. You can use the ticker of your pool here.
@@ -41,8 +41,8 @@ do
         n) POOL_NAME="$OPTARG" ;;
         i) INTERVAL=$(printf "%s" $OPTARG | parseInterval)
            if [ -z $INTERVAL ] || (( INTERVAL < 0 )); then
-               echo 'Wrong value for option `-r`'
-               showHelp;
+               logError 'Wrong value for option `-r`' >&2
+               showHelp >&2
                exit 1
            fi
            ;;
@@ -54,18 +54,19 @@ do
                info) LOG_LEVEL=3;;
                debug) LOG_LEVEL=4;;
                trace) LOG_LEVEL=5;;
-               *) echo 'Wrong value for option `-L`'; showHelp; exit 1;;
+               *) logError 'Wrong value for option `-L`' >&2; showHelp >&2; exit 1;;
            esac;;
         d) ONLY_CHANGES=1 ;;
         j) WITH_JOURNALD=1;;
         h) showHelp; exit 0 ;;
+        ?) showHelp >&2; exit 1;;
     esac
 done
 
 function fetchCurrentEpoch {
     local JSON ERR_MSG
     eval "$( (jcli rest v0 node stats get --output-format=json | jq -r .lastBlockDate | cut -d. -f1) 2> >(ERR_MSG=$(cat); declare -p ERR_MSG) > >(JSON=$(cat); declare -p JSON) )"
-    if [ -n "$ERR_MSG" ]; then logError "$ERR_MSG"; fi
+    if [ -n "$ERR_MSG" ]; then logError "$ERR_MSG" >&2 ; fi
     if [ -n "$JSON" ]; then
         echo -n "$JSON"
     fi
@@ -77,7 +78,7 @@ function fetchCountOfBlocksForEpoch {
     local JSON ERR_MSG
 
     eval "$( (jcli rest v0 leaders logs get --output-format=json | jq "[ (.[] | select ( [(.scheduled_at_date|startswith(\"$EPOCH.\")), .enclave_leader_id == ${ENCLAVE_LEADER_ID:-.enclave_leader_id}] | all)) ] | length") 2> >(ERR_MSG=$(cat); declare -p ERR_MSG) > >(JSON=$(cat); declare -p JSON) )"
-    if [ -n "$ERR_MSG" ]; then logError "$ERR_MSG"; fi
+    if [ -n "$ERR_MSG" ]; then logError "$ERR_MSG" >&2 ; fi
     if [ -n "$JSON" ]; then
         echo -n $JSON
     fi

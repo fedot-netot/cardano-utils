@@ -4,7 +4,7 @@
 
 function showHelp() {
     cat <<EOF
-usage: $0 -p POOL_ID [-n HEADER] [-r INTERVAL] [-a TELEGRAM_ACCESS_TOKEN] [-c CHANNEL_ID]
+usage: $(basename $0) -p POOL_ID [-n HEADER] [-r INTERVAL] [-a TELEGRAM_ACCESS_TOKEN] [-c CHANNEL_ID]
           [-d] [-L LOG_LEVEL] [-j] [-h]
   -p  Pool id. Mandatory parameter.
   -n  Pool name/identifier. You can use the ticker of your pool here.
@@ -39,8 +39,8 @@ do
         n) POOL_NAME="$OPTARG" ;;
         r) REPORT_INTERVAL=$(printf "%s" $OPTARG | parseInterval)
            if [ -z $REPORT_INTERVAL ] || (( REPORT_INTERVAL < 0 )); then
-               echo 'Wrong value for option `-r`'
-               showHelp;
+               logError 'Wrong value for option `-r`' >&2
+               showHelp >&2;
                exit 1
            fi
            ;;
@@ -52,17 +52,18 @@ do
                info) LOG_LEVEL=3;;
                debug) LOG_LEVEL=4;;
                trace) LOG_LEVEL=5;;
-               *) echo 'Wrong value for option `-L`'; showHelp; exit 1;;
+               *) logError 'Wrong value for option `-L`' >&2; showHelp >&2; exit 1;;
            esac;;
         d) ONLY_CHANGES=1 ;;
         j) WITH_JOURNALD=1;;
         h) showHelp; exit 0 ;;
+        ?) showHelp >&2; exit 1;;
     esac
 done
 
 if [ -z "$POOL_ID" ]; then
-    echo 'Parameter `-p` is mandatory'
-    showHelp
+    logError 'Parameter `-p` is mandatory' >&2
+    showHelp >&2
     exit 1
 fi
 

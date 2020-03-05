@@ -1,4 +1,4 @@
-#! /bin/sh
+#!/bin/bash
 
 
 # Default value of command which output will be sent to the log
@@ -7,7 +7,7 @@ DEFAULT_REPORT_CMD='jcli rest v0 node stats get; echo "\nNeigbors: $(netstat -tn
 
 function showHelp() {
     cat <<EOF
-usage: $0 -p -i -a -c -r -h
+usage: $(basename $0) -p -i -a -c -r -h
   -p  Pool name/identifier. You can use the ticker of your pool here.
   -i  Interval in minutes that will be used for regular sending.
       If not specified then send info only once and exit.
@@ -38,6 +38,7 @@ do
         a) AUTH_TOKEN="$OPTARG" ;;
         c) CHANNEL_ID="$OPTARG" ;;
         h) showHelp; exit 0 ;;
+        ?) showHelp >&2; exit 1;;
     esac
 done
 

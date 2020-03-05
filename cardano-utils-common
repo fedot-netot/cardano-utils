@@ -108,7 +108,7 @@ function logError {
             echo "$1"
         else
             (( WITH_JOURNALD )) && echo -n '<3>'
-            echo -e "\e[31m$1\e[0m" >&2
+            echo -e "\e[31m$1\e[0m"
         fi
     fi
 }
@@ -119,7 +119,7 @@ function logWarn {
             echo "$1"
         else
             (( WITH_JOURNALD )) && echo -n '<4>'
-            echo -e "\e[93m$1\e[0m" >&2
+            echo -e "\e[93m$1\e[0m"
         fi
     fi
 }
@@ -147,7 +147,7 @@ function logInfo {
 }
 
 function logDebug {
-    if (( LOG_LEVEL >= 5  )); then
+    if (( LOG_LEVEL >= ${2:-4} )); then
         if [ "$SIMPLE_LOGGING" == "yes" ]; then
             echo "$1"
         else
@@ -158,7 +158,7 @@ function logDebug {
 }
 
 function logTrace {
-    logDebug $1
+    logDebug "$1" 5
 }
 
 
