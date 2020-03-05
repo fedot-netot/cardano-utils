@@ -22,7 +22,7 @@ usage: $(basename $0) [-e ENCLAVE] [-n HEADER] [-i INTERVAL] [-a TELEGRAM_ACCESS
   -j  Prepare messages for journald severity levels.
   -h  Show this help.
 
-This scrip collect and report of the own slots information of the jormungandr node to stdout and the telegram
+This scrip collect and report information about the own slots of the pool to stdout and the telegram
 channel via the Telegram Bot.
 
 By default, it is assumed that all time INTERVALs are set in seconds. But you can explicitly specify time units:
