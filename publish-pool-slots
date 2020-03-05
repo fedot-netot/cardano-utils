@@ -7,8 +7,10 @@ function showHelp() {
     cat <<EOF
 usage: $(basename $0) [-e ENCLAVE] [-n HEADER] [-i INTERVAL] [-a TELEGRAM_ACCESS_TOKEN] [-c CHANNEL_ID]
           [-d] [-L LOG_LEVEL] [-j] [-h]
-  -e  Enclave leader id. If specified then only slots of this enclave leader will be counted. This option
-      can be specified several times for several different enclave leader ids.
+  -e  Enclave leader id. It is integer number. It is helpfull if node carries leadership of several pools.
+      If specified then only slots of this enclave leader will be counted. If not specified then all slots
+      will be counted regardles of which enclave it belongs to.
+      This option can be specified several times for several different enclave leader ids to count.
   -n  Pool name/identifier. You can use the ticker of your pool here.
   -i  Interval that will be used for regular checking.
       If not specified then send info only once and exit.
@@ -38,7 +40,12 @@ T_AUTH_TOKEN=$TELEGRAM_BOT_AUTH_TOKEN
 while getopts 'e:n:i:a:c:L:djh' c
 do
     case $c in
-        e) ENCLAVE_LEADER_ID[${#ENCLAVE_LEADER_ID[*]}]="$OPTARG" ;;
+        e) if ! is_number "$OPTARG"; then
+               logError 'Wrong value for option `-e`' >&2
+               showHelp >&2
+               exit 1
+           fi
+           ENCLAVE_LEADER_ID[${#ENCLAVE_LEADER_ID[*]}]="$OPTARG" ;;
         n) POOL_NAME="$OPTARG" ;;
         i) INTERVAL=$(printf "%s" $OPTARG | parseInterval)
            if [ -z $INTERVAL ] || (( INTERVAL < 0 )); then
@@ -79,7 +86,7 @@ function fetchCountOfBlocksForEpoch {
 
     local ENCLAVE_JSON=true
     if (( ${#ENCLAVE_LEADER_ID[*]} > 0 )); then
-        local ENCLAVE_JSON_=$(printf ' or (.|tostring==\"%s\")' ${ENCLAVE_LEADER_ID[*]})
+        local ENCLAVE_JSON_=$(printf ' or (.enclave_leader_id==%d)' ${ENCLAVE_LEADER_ID[*]})
         ENCLAVE_JSON_=${ENCLAVE_JSON_:4}
         ENCLAVE_JSON=${ENCLAVE_JSON_:-true}
     fi
