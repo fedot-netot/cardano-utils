@@ -172,3 +172,28 @@ function printStake {
     local LOVELACES=$1
     echo $(lovelaces2ada $LOVELACES) ADA
 }
+
+function postToTelegram {
+    local AUTH_TOKEN=$1
+    local CHANNEL_ID=$2
+    if [ -n "$AUTH_TOKEN" ] && [ -n "$CHANNEL_ID" ]; then
+        curl --silent \
+             --request POST https://api.telegram.org/bot$AUTH_TOKEN/sendMessage \
+             --data chat_id="$CHANNEL_ID" \
+             --data-urlencode text@- \
+             > /dev/null
+    fi
+}
+
+function postHtmlToTelegram {
+    local AUTH_TOKEN=$1
+    local CHANNEL_ID=$2
+    if [ -n "$AUTH_TOKEN" ] && [ -n "$CHANNEL_ID" ]; then
+        curl --silent \
+             --request POST https://api.telegram.org/bot$AUTH_TOKEN/sendMessage \
+             --data parse_mode=HTML \
+             --data chat_id="$CHANNEL_ID" \
+             --data-urlencode text@- \
+             > /dev/null
+    fi
+}

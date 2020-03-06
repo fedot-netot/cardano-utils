@@ -332,15 +332,9 @@ function readJormungandrState {
 }
 
 function sendToTelegram {
-    local INPUT=$(cat)
     if [ -n "$T_AUTH_TOKEN" ] && [ -n "$T_CHANNEL_ID" ]; then
-        echo -e "${T_MESSAGE_HEADER:+${T_MESSAGE_HEADER}\n\n}${INPUT}" | \
-        curl --silent \
-             --request POST https://api.telegram.org/bot$T_AUTH_TOKEN/sendMessage \
-             --data parse_mode=HTML \
-             --data chat_id="$T_CHANNEL_ID" \
-             --data-urlencode text@- \
-             > /dev/null
+        local INPUT=$(cat)
+        echo -e "${T_MESSAGE_HEADER:+${T_MESSAGE_HEADER}\n\n}${INPUT}" | postHtmlToTelegram "$T_AUTH_TOKEN" "$T_CHANNEL_ID"
     fi
 }
 
@@ -525,7 +519,9 @@ function exit1_ {
 
 function signalLog {
     logTotal 'no'
-    logTotal 'yes' | sendToTelegram
+    if [ -n "$T_AUTH_TOKEN" ] && [ -n "$T_CHANNEL_ID" ]; then
+        logTotal 'yes' | sendToTelegram
+    fi
 }
 
 while :;

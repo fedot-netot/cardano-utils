@@ -1,5 +1,6 @@
 #!/bin/bash
 
+. cardano-utils-common
 
 # Default value of command which output will be sent to the log
 DEFAULT_REPORT_CMD='jcli rest v0 node stats get; echo "\nNeigbors: $(netstat -tnp 2> /dev/null| grep -E ''ESTABLISHED.+jormungandr'' | cut -c45-65 | sort | uniq | wc -l)"'
@@ -42,19 +43,13 @@ do
     esac
 done
 
-# if ( [ -n "$AUTH_TOKEN" ] && [ -z "$CHANNEL_ID" ] ) || ( [ -z "$AUTH_TOKEN" ] && [ -n "$CHANNEL_ID" ] ); then
-#     echo 'You must specify neither or both of `-a` and `-c`'
-#     showHelp
-#     exit 1
-# fi
-
 
 while :;
 do
 REPORT=$(/bin/sh -c "$REPORT_CMD")
 if [ -n "$CHANNEL_ID" ] && [ -n "$AUTH_TOKEN" ]; then
 echo -e "${POOL_ID:+${POOL_ID}\n}$REPORT" | \
-curl --silent --request POST https://api.telegram.org/bot$AUTH_TOKEN/sendMessage --data chat_id="$CHANNEL_ID" --data-urlencode text@- > /dev/null
+postToTelegram "$AUTH_TOKEN" "$CHANNEL_ID"
 fi
 echo -e "${POOL_ID:+${POOL_ID}\n}$REPORT"
 if [ -z $INTERVAL ]; then

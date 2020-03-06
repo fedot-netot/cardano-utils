@@ -193,24 +193,10 @@ function sendToTelegram {
     if [ -n "$T_AUTH_TOKEN" ] && [ -n "$T_CHANNEL_ID" ]; then
         local INPUT=$(cat)
         if [ -n "$INPUT" ]; then
-            echo -e "${POOL_NAME:+${POOL_NAME}\n\n}${INPUT}" | \
-                curl --silent \
-                     --request POST https://api.telegram.org/bot$T_AUTH_TOKEN/sendMessage \
-                     --data parse_mode=HTML \
-                     --data chat_id="$T_CHANNEL_ID" \
-                     --data-urlencode text@- \
-                     > /dev/null
+            echo -e "${POOL_NAME:+${POOL_NAME}\n\n}${INPUT}" | postHtmlToTelegram "$T_AUTH_TOKEN" "$T_CHANNEL_ID"
         fi
     fi
 }
-
-function sendToLog {
-    local INPUT=$(cat)
-    if [ -n "$INPUT" ]; then
-        echo -e "${INPUT}"
-    fi
-}
-
 
 function doOnce {
     local _epoch=$(fetchCurrentEpoch)
@@ -225,8 +211,10 @@ function doOnce {
             logDebug "before getScheduledTimes" >&2
             SCHEDULED_AT_TIME_ARR=( $(echo -n $_json | getScheduledTimes $_epoch) )
             logDebug "after getScheduledTimes" >&2
-            printReport "no"  | sendToLog
-            printReport "yes" | sendToTelegram
+            printReport "no"
+            if [ -n "$T_AUTH_TOKEN" ] && [ -n "$T_CHANNEL_ID" ]; then
+                printReport "yes" | sendToTelegram
+            fi
             LAST_REPORTED_EPOCH=$CURRENT_EPOCH
         else
             logError "Cannot get count of the slots for epoch \`${_epoch}\`" >&2
