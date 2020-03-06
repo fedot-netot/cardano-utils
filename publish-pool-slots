@@ -6,7 +6,7 @@
 function showHelp() {
     cat <<EOF
 usage: $(basename $0) [-e ENCLAVE] [-n HEADER] [-i INTERVAL] [-a TELEGRAM_ACCESS_TOKEN] [-c CHANNEL_ID]
-          [-d] [-L LOG_LEVEL] [-j] [-h]
+          [-t] [-d] [-L LOG_LEVEL] [-j] [-h]
   -e  Enclave leader id. It is integer number. It is helpfull if node carries leadership of several pools.
       If specified then only slots of this enclave leader will be counted. If not specified then all slots
       will be counted regardles of which enclave it belongs to.
@@ -21,6 +21,7 @@ usage: $(basename $0) [-e ENCLAVE] [-n HEADER] [-i INTERVAL] [-a TELEGRAM_ACCESS
       the environment variable \`TELEGRAM_CHANNEL_ID\` will be used.
   -L  Log level. One of the values \`error\`, \`warn\`, \`info\`, \`debug\`, \`trace\`. Only messages with
       this and stronger severity level will be logged.
+  -t  Include in the report the slots schedule.
   -j  Prepare messages for journald severity levels.
   -h  Show this help.
 
@@ -37,7 +38,7 @@ CHANNEL_ID="$TELEGRAM_CHANNEL_ID"
 # Access token for Telegram Bot API
 T_AUTH_TOKEN=$TELEGRAM_BOT_AUTH_TOKEN
 
-while getopts 'e:n:i:a:c:L:djh' c
+while getopts 'e:n:i:a:c:L:tdjh' c
 do
     case $c in
         e) if ! is_number "$OPTARG"; then
@@ -66,6 +67,7 @@ do
            esac;;
         d) ONLY_CHANGES=1 ;;
         j) WITH_JOURNALD=1;;
+        t) WITH_SCHEDULE_TIMES=1;;
         h) showHelp; exit 0 ;;
         ?) showHelp >&2; exit 1;;
     esac
@@ -80,11 +82,11 @@ function fetchCurrentEpoch {
     fi
 }
 
-function fetchCountOfBlocksForEpoch {
+function fetchSlotsJsonForEpoch {
     local EPOCH=$1
     local JSON ERR_MSG
-
     local ENCLAVE_JSON=true
+
     if (( ${#ENCLAVE_LEADER_ID[*]} > 0 )); then
         local ENCLAVE_JSON_=$(printf ' or (.enclave_leader_id==%d)' ${ENCLAVE_LEADER_ID[*]})
         ENCLAVE_JSON_=${ENCLAVE_JSON_:4}
@@ -93,16 +95,35 @@ function fetchCountOfBlocksForEpoch {
 
     logDebug "enclave condition: $ENCLAVE_JSON" >&2
 
-    eval "$( (jcli rest v0 leaders logs get --output-format=json | jq "[ (.[] | select ( [(.scheduled_at_date|startswith(\"$EPOCH.\")), ${ENCLAVE_JSON}] | all)) ] | length") 2> >(ERR_MSG=$(cat); declare -p ERR_MSG) > >(JSON=$(cat); declare -p JSON) )"
+    eval "$( (jcli rest v0 leaders logs get --output-format=json) 2> >(ERR_MSG=$(cat); declare -p ERR_MSG) > >(JSON=$(cat); declare -p JSON) )"
     if [ -n "$ERR_MSG" ]; then logError "$ERR_MSG" >&2; fi
     if [ -n "$JSON" ]; then
-        echo -n $JSON
+        echo -n $JSON | jq "[( .[] | select ( [(.scheduled_at_date|startswith(\"${EPOCH}.\")), ${ENCLAVE_JSON} ] | all) )] | sort_by( .scheduled_at_time | strptime(\"%Y-%m-%dT%H:%M:%S%z\") | mktime)"
     fi
 }
 
-function fetchAll {
-    fetchStake
-    fetchActveStake
+function getCountOfSlotsForEpoch {
+    local EPOCH=$1
+    local JSON=$(cat)
+    logTrace "getCountOfSlotsForEpoch.start" >&2
+    if [ -n "$JSON" ]; then
+        logTrace "getCountOfSlotsForEpoch.1" >&2
+        echo -n $JSON | jq -r "length"
+        logTrace "getCountOfSlotsForEpoch.2" >&2
+    fi
+    logTrace "getCountOfSlotsForEpoch.end" >&2
+}
+
+function getScheduledTimes {
+    local EPOCH=$1
+    local JSON=$(cat)
+    logTrace "getScheduledTimes.start" >&2
+    if [ -n "$JSON" ]; then
+        logTrace "getScheduledTimes.1" >&2
+        echo -n "$JSON" | jq -r ".[] | .scheduled_at_time | strptime(\"%Y-%m-%dT%H:%M:%S%z\") | mktime"
+        logTrace "getScheduledTimes.2" >&2
+    fi
+    logTrace "getScheduledTimes.end" >&2
 }
 
 CURRENT_EPOCH=
@@ -121,6 +142,12 @@ function qs {
 function qe {
     echo -n "</i></b></u>"
 }
+function qs_ {
+    echo -n "<u><i>"
+}
+function qe_ {
+    echo -n "</i></u>"
+}
 
 function printReport {
     local SIMPLE_LOGGING=$1
@@ -129,9 +156,16 @@ function printReport {
         if [ -n "$CURRENT_EPOCH" ] && is_number $CURRENT_EPOCH_BLOCK_COUNT; then
             if ([ -z "$ONLY_CHANGES" ] || [ -n "$LAST_REPORTED_EPOCH" ] ) && (( CURRENT_EPOCH != LAST_REPORTED_EPOCH )); then
                 if (( CURRENT_EPOCH_BLOCK_COUNT == 1 )); then
-                    logNotice "$(qs)${CURRENT_EPOCH_BLOCK_COUNT}$(qe) slot was allocated for the epoch $(qs)${CURRENT_EPOCH}$(qe)"
+                    logNotice "$(qs)${CURRENT_EPOCH_BLOCK_COUNT}$(qe) slot was allocated for the epoch $(qs)${CURRENT_EPOCH}$(qe)."
                 else
-                    logNotice "$(qs)${CURRENT_EPOCH_BLOCK_COUNT}$(qe) slots were allocated for the epoch $(qs)${CURRENT_EPOCH}$(qe)"
+                    logNotice "$(qs)${CURRENT_EPOCH_BLOCK_COUNT}$(qe) slots were allocated for the epoch $(qs)${CURRENT_EPOCH}$(qe)."
+                fi
+                if [ -n "$WITH_SCHEDULE_TIMES" ] && (( ${#SCHEDULED_AT_TIME_ARR[*]} > 0 )); then
+                    logNotice "Slots schedule:"
+                    for item in ${SCHEDULED_AT_TIME_ARR[*]}
+                    do
+                        logNotice "  <i>$(date '+%Y-%m-%d ' -u -d"@$item")<b><u>$(date '+%H:%M:%S' -u -d"@$item")</u></b> UTC</i>"
+                    done
                 fi
             fi
         fi
@@ -139,9 +173,16 @@ function printReport {
         if [ -n "$CURRENT_EPOCH" ] && is_number $CURRENT_EPOCH_BLOCK_COUNT; then
             if ([ -z "$ONLY_CHANGES" ] || [ -n "$LAST_REPORTED_EPOCH" ] ) && (( CURRENT_EPOCH != LAST_REPORTED_EPOCH )); then
                 if (( CURRENT_EPOCH_BLOCK_COUNT == 1 )); then
-                    logNotice "${CURRENT_EPOCH_BLOCK_COUNT} slot was allocated for the epoch ${CURRENT_EPOCH}$(conditional_ticker)"
+                    logNotice "${CURRENT_EPOCH_BLOCK_COUNT} slot was allocated for the epoch ${CURRENT_EPOCH}$(conditional_ticker)."
                 else
-                    logNotice "${CURRENT_EPOCH_BLOCK_COUNT} slots were allocated for the epoch ${CURRENT_EPOCH}$(conditional_ticker)"
+                    logNotice "${CURRENT_EPOCH_BLOCK_COUNT} slots were allocated for the epoch ${CURRENT_EPOCH}$(conditional_ticker)."
+                fi
+                if [ -n "$WITH_SCHEDULE_TIMES" ] && (( ${#SCHEDULED_AT_TIME_ARR[*]} > 0 )); then
+                    logNotice "Slots schedule:"
+                    for item in ${SCHEDULED_AT_TIME_ARR[*]}
+                    do
+                        logNotice "  $(date '+%Y-%m-%d %H:%M:%S UTC' -u -d"@$item")"
+                    done
                 fi
             fi
         fi
@@ -170,25 +211,38 @@ function sendToLog {
     fi
 }
 
-while :;
-do
-    _epoch=$(fetchCurrentEpoch)
+
+function doOnce {
+    local _epoch=$(fetchCurrentEpoch)
     if is_number $_epoch; then
-        _count=$(fetchCountOfBlocksForEpoch $_epoch)
+        local _json=$(fetchSlotsJsonForEpoch $_epoch)
+        logDebug "$_json" >&2
+        local _count=$(echo -n $_json | getCountOfSlotsForEpoch $_epoch)
         if is_number $_count; then
+            logDebug "count found!" >&2
             CURRENT_EPOCH=$_epoch
             CURRENT_EPOCH_BLOCK_COUNT=$_count
+            logDebug "before getScheduledTimes" >&2
+            SCHEDULED_AT_TIME_ARR=( $(echo -n $_json | getScheduledTimes $_epoch) )
+            logDebug "after getScheduledTimes" >&2
             printReport "no"  | sendToLog
             printReport "yes" | sendToTelegram
             LAST_REPORTED_EPOCH=$CURRENT_EPOCH
         else
-            logError "Cannot get count of the slots for epoch \`${_epoch}\`"
+            logError "Cannot get count of the slots for epoch \`${_epoch}\`" >&2
         fi
     else
-        logError "Cannot get current epoch number"
+        logError "Cannot get current epoch number" >&2
     fi
-    if [ -z $INTERVAL ]; then
-      exit 0
-    fi
+}
+
+
+doOnce
+
+while [ -n "$INTERVAL" ]
+do
+    doOnce
     sleep "${INTERVAL}s"
 done
+
+exit 0
