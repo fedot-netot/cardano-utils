@@ -17,7 +17,7 @@ EOF
 
 MAX_COUNT=$DEFAULT_MAX_COUNT
 
-while getopts 'm:nh' c
+while getopts 'm:L:nh' c
 do
     case $c in
         m) if ! is_number $OPTARG; then
@@ -29,6 +29,14 @@ do
            ;;
         n) ONLY_NUMBER="yes" ;;
         h) showHelp; exit 0 ;;
+        L) case "$OPTARG" in
+               error) LOG_LEVEL=1;;
+               warn) LOG_LEVEL=2;;
+               info) LOG_LEVEL=3;;
+               debug) LOG_LEVEL=4;;
+               trace) LOG_LEVEL=5;;
+               *) logError 'Wrong value for option `-L`' >&2; showHelp >&2; exit 1;;
+           esac;;
         *) showHelp; exit 1 ;;
     esac
 done
@@ -56,7 +64,7 @@ function getNextBlock {
     local THIS_BLOCK_ID=$(cat)
     unset STAKE_INFO_OUTPUT
     eval "$( (jcli rest v0 block ${THIS_BLOCK_ID} next-id get) 2> >(ERR_MSG=$(cat); declare -p ERR_MSG) > >(TEXT=$(cat); declare -p TEXT) )"
-    if [ -n "$ERR_MSG" ]; then logError "$ERR_MSG"; fi
+    if [ -n "$ERR_MSG" ]; then logError "$ERR_MSG" >&2; fi
     if [ -n "$TEXT" ]; then
         echo -n $TEXT
     fi
@@ -67,6 +75,7 @@ NEXT_BLOCK_ID=$(echo -n "$BLOCK_ID" | getNextBlock)
 
 while [ -n "$NEXT_BLOCK_ID" ]
 do
+    logTrace "next-id: $NEXT_BLOCK_ID" >&2
     (( COUNTER++ ))
     (( COUNTER >= MAX_COUNT )) && break
     NEXT_BLOCK_ID=$(echo -n "$NEXT_BLOCK_ID" | getNextBlock)
