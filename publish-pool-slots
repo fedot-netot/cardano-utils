@@ -71,27 +71,44 @@ do
     esac
 done
 
-function fetchCurrentEpoch {
-    local EPOCH ERR_MSG
-    evalx EPOCH ERR_MSG "curl -sSf $JORMUNGANDR_RESTAPI_URL/v0/node/stats  | jq -r .lastBlockDate | cut -d. -f1"
+
+CURRENT_EPOCH=
+CURRENT_EPOCH_BLOCK_COUNT=
+LAST_REPORTED_EPOCH=
+PREVIOUS_LEADERS_JSON=
+declare -A POSTPONED_BLOCKS
+
+function fetchNodeStats {
+    local JSON ERR_MSG
+    evalx JSON ERR_MSG "curl -sSf $JORMUNGANDR_RESTAPI_URL/v0/node/stats"
     if [ -n "$ERR_MSG" ]; then
         logError "$ERR_MSG" >&2
         return 1
     fi
-    echo -n "$EPOCH"
+    echo -n "$JSON"
 }
 
-function fetchSlotsJsonForEpoch {
-    local EPOCH=$1
-    local ENCLAVE_JSON=true
+function getCurrentEpoch {
+    # STDIN: node stats json
 
+    jq -r '.lastBlockDate' | cut -d. -f1
+}
+
+function getLastBlockHeight {
+    # STDIN: node stats json
+
+    jq -r '.lastBlockHeight|tonumber'
+}
+
+function fetchLeadersLogs {
+    local JSON ERR_MSG
+
+    local ENCLAVE_JSON=true
     if (( ${#ENCLAVE_LEADER_ID[*]} > 0 )); then
         local ENCLAVE_JSON_=$(printf ' or (.enclave_leader_id==%d)' ${ENCLAVE_LEADER_ID[*]})
         ENCLAVE_JSON_=${ENCLAVE_JSON_:4}
         ENCLAVE_JSON=${ENCLAVE_JSON_:-true}
     fi
-
-    logDebug "enclave condition: $ENCLAVE_JSON" >&2
 
     local JSON ERR_MSG
     evalx JSON ERR_MSG "curl -sSf $JORMUNGANDR_RESTAPI_URL/v0/leaders/logs"
@@ -100,49 +117,169 @@ function fetchSlotsJsonForEpoch {
         return 1
     fi
     if [ -n "$JSON" ]; then
-        echo -n $JSON | jq "[( .[] | select ( [(.scheduled_at_date|startswith(\"${EPOCH}.\")), ${ENCLAVE_JSON} ] | all) )] | sort_by( .scheduled_at_time | strptime(\"%Y-%m-%dT%H:%M:%S%z\") | mktime)"
+        echo -n $JSON | \
+            jq "[( .[] | select(${ENCLAVE_JSON}) )] | sort_by(.scheduled_at_time | strptime(\"%Y-%m-%dT%H:%M:%S%z\") | mktime)"
     fi
 }
 
-function getCountOfSlotsForEpoch {
+function getLeadersLogsForEpoch {
+    # STDIN: leaders logs json
+
     local EPOCH=$1
-    local JSON=$(cat)
-    logTrace "getCountOfSlotsForEpoch.start" >&2
-    if [ -n "$JSON" ]; then
-        logTrace "getCountOfSlotsForEpoch.1" >&2
-        echo -n $JSON | jq -r "length"
-        logTrace "getCountOfSlotsForEpoch.2" >&2
-    fi
-    logTrace "getCountOfSlotsForEpoch.end" >&2
+    jq --arg EPOCH "$EPOCH" \
+       '[ .[] | select(.scheduled_at_date|startswith($EPOCH+".")) ]'
+}
+
+function getCountOfSlots {
+    # STDIN: leaders logs json
+
+    jq -r "length"
 }
 
 function getScheduledTimes {
-    local EPOCH=$1
-    local JSON=$(cat)
-    logTrace "getScheduledTimes.start" >&2
-    if [ -n "$JSON" ]; then
-        logTrace "getScheduledTimes.1" >&2
-        echo -n "$JSON" | jq -r ".[] | .scheduled_at_time | strptime(\"%Y-%m-%dT%H:%M:%S%z\") | mktime"
-        logTrace "getScheduledTimes.2" >&2
-    fi
-    logTrace "getScheduledTimes.end" >&2
+    # STDIN: leaders logs json
+
+    jq -r ".[] | .scheduled_at_time | strptime(\"%Y-%m-%dT%H:%M:%S%z\") | mktime"
 }
 
 function getScheduledDates {
-    local EPOCH=$1
-    local JSON=$(cat)
-    logTrace "getScheduledDates.start" >&2
-    if [ -n "$JSON" ]; then
-        logTrace "getScheduledDates.1" >&2
-        echo -n "$JSON" | jq -r ".[] | .scheduled_at_date"
-        logTrace "getScheduledDates.2" >&2
-    fi
-    logTrace "getScheduledDates.end" >&2
+    # STDIN: leaders logs json
+
+    jq -r ".[] | .scheduled_at_date"
 }
 
-CURRENT_EPOCH=
-CURRENT_EPOCH_BLOCK_COUNT=
-LAST_REPORTED_EPOCH=
+function getNewBlocks {
+    local oldJson="${1:-[]}"
+    local newJson="${2:-[]}"
+    # local oldJson="$(cat leaders.1.json)"
+    # local newJson="$(cat leaders.2.json)"
+    echo "{\"old\":${oldJson},\"new\":${newJson}}" | jq -rc '
+.old as $old
+| .new[]
+| . as $it
+| select(
+       [
+         $old[]
+         | (
+                 .scheduled_at_date == $it.scheduled_at_date
+             and .enclave_leader_id == $it.enclave_leader_id
+             and .status == $it.status
+           ) | not
+       ] | all
+       and $it.status != "Pending"
+  )
+'
+}
+
+function checkBlockInBC {
+    local block=$1
+    local lastBlockHeight=$2
+}
+
+function printBlockSuccess {
+    local SIMPLE_LOGGING=$1
+    local blockJson=$2
+
+    local BLOCK_ID=$(echo -n $blockJson | jq -rc '.status.Block.block')
+    local SLOT=$(echo -n $blockJson | jq -rc '.scheduled_at_date')
+    local ENCLAVE_LEADER_ID=$(echo -n $blockJson | jq -rc '.enclave_leader_id')
+
+    if [ "$SIMPLE_LOGGING" == "yes" ]; then
+        logNotice "Slot $(qs)$SLOT$(qe) <b>success</b>: block <a href=\"https://shelleyexplorer.cardano.org/en/block/$BLOCK_ID\">$BLOCK_ID</a> was successfully produced."
+    else
+        logNotice "Slot $SLOT SUCCESS: block $BLOCK_ID was successfully produced."
+    fi
+}
+
+function printBlockFailFork {
+    local SIMPLE_LOGGING=$1
+    local blockJson=$2
+
+    local BLOCK_ID=$(echo -n $blockJson | jq -rc '.status.Block.block')
+    local SLOT=$(echo -n $blockJson | jq -rc '.scheduled_at_date')
+
+    if [ "$SIMPLE_LOGGING" == "yes" ]; then
+        logNotice "Slot $(qs)$SLOT$(qs) <b>fail</b>: block <a href=\"https://shelleyexplorer.cardano.org/en/block/$BLOCK_ID\">$BLOCK_ID</a> got into a competitive fork that lost."
+    else
+        logNotice "Slot $SLOT FAIL: block $BLOCK_ID got into a competitive FORK that lost."
+    fi
+}
+
+function printBlockFail {
+    local SIMPLE_LOGGING=$1
+    local blockJson=$2
+
+    local SLOT=$(echo -n $blockJson | jq -rc '.scheduled_at_date')
+    local REASON=$(echo -n $blockJson | jq -rc '..|.reason?|select(length > 0)')
+
+    if [ "$SIMPLE_LOGGING" == "yes" ]; then
+        logNotice "Slot $(qs)$SLOT$(qs) <b>fail</b>: $(if [ -n "$REASON" ];then echo "$REASON"; else echo "failed to produce block"; fi)."
+    else
+        logNotice "Slot $SLOT FAIL: $(if [ -n "$REASON" ];then echo "$REASON"; else echo "failed to produce block"; fi)."
+    fi
+}
+
+function makeOneCreatedBlockReport {
+    local lastBlockHeight=$1
+    local blockJson=$2
+
+    local enough_confirmation_count=10
+    local block=$(echo -n "$blockJson" | jq -rc '.status.Block?.block')
+    if [ -n "$block" ] && [ "null" != "$block" ]; then
+        local confirmation_count ERR_MSG
+        evalx confirmation_count ERR_MSG "curl -sSf $JORMUNGANDR_RESTAPI_URL/v0/block/$block/next_id?count=$enough_confirmation_count | xxd -p -c32 | wc -l"
+        if [ -n "$ERR_MSG" ] && ! isNotFoundMessage "$ERR_MSG"; then
+            logError "$ERR_MSG" >&2
+        fi
+        if (( confirmation_count >= enough_confirmation_count )); then
+            printBlockSuccess "no"  "$blockJson"
+            printBlockSuccess "yes" "$blockJson" | sendToTelegram
+            return 0
+        else
+            local blockHeight=$(echo -n "$blockJson" | jq -rc '.status.Block?.chain_length')
+            if (( (confirmation_count + blockHeight) < (lastBlockHeight - enough_confirmation_count) )); then
+                # this block in a fork
+                printBlockFailFork "no" "$blockJson"
+                printBlockFailFork "yes" "$blockJson" | sendToTelegram
+                return 0
+            else
+                # Block was produced but now it is not clear will it be applied by the network. It will be checked later.
+                return 1
+            fi
+
+        fi
+    else
+        local isPendingStatus=$(echo -n "$blockJson" | jq -rc '.status=="Pending"')
+        if [ "$isPendingStatus" != "true" ]; then
+            printBlockFail "no" "$blockJson"
+            printBlockFail "yes" "$blockJson" | sendToTelegram
+            return 0
+        fi
+    fi
+}
+
+function makeCreatedBlocksReports {
+
+    if [ -z "$PREVIOUS_LEADERS_JSON" ] && [ -n "$ONLY_CHANGES" ]; then
+        return
+    fi
+
+    local nodeStatsJson=$1
+    local leadersLogsJson=$2
+
+    local lastBlockHeight=$(echo -n $nodeStatsJson | getLastBlockHeight)
+    for blockJson in "${!POSTPONED_BLOCKS[@]}"
+    do
+        makeOneCreatedBlockReport "$lastBlockHeight" "$blockJson" && unset 'POSTPONED_BLOCKS[$blockJson]' || POSTPONED_BLOCKS["$blockJson"]=1
+    done
+
+    readarray -t blocksJson < <(getNewBlocks "$PREVIOUS_LEADERS_JSON" "$leadersLogsJson")
+    for blockJson in "${blocksJson[@]}"
+    do
+        makeOneCreatedBlockReport "$lastBlockHeight" "$blockJson" && unset 'POSTPONED_BLOCKS[$blockJson]' || POSTPONED_BLOCKS["$blockJson"]=1
+    done
+}
+
 
 function conditional_ticker {
     if [ -n "$POOL_NAME" ]; then
@@ -163,7 +300,7 @@ function qe_ {
     echo -n "</i></u>"
 }
 
-function printReport {
+function printNewEpochReport {
     local SIMPLE_LOGGING=$1
 
     if [ "$SIMPLE_LOGGING" == "yes" ]; then
@@ -216,28 +353,40 @@ function sendToTelegram {
     fi
 }
 
-function doOnce {
-    local _epoch=$(fetchCurrentEpoch)
-    if is_number $_epoch; then
-        local _json=$(fetchSlotsJsonForEpoch $_epoch)
-        logDebug "$_json" >&2
-        local _count=$(echo -n $_json | getCountOfSlotsForEpoch $_epoch)
-        if is_number $_count; then
-            logDebug "count found!" >&2
-            CURRENT_EPOCH=$_epoch
-            CURRENT_EPOCH_BLOCK_COUNT=$_count
-            logDebug "before getScheduledTimes" >&2
-            SCHEDULED_AT_TIME_ARR=( $(echo -n $_json | getScheduledTimes $_epoch) )
-            SCHEDULED_AT_DATE_ARR=( $(echo -n $_json | getScheduledDates $_epoch) )
-            logDebug "after getScheduledTimes" >&2
-            printReport "no"
-            if [ -n "$T_AUTH_TOKEN" ] && [ -n "$T_CHANNEL_ID" ]; then
-                printReport "yes" | sendToTelegram
-            fi
-            LAST_REPORTED_EPOCH=$CURRENT_EPOCH
-        else
-            logError "Cannot get count of the slots for epoch \`${_epoch}\`" >&2
+function makeNewEpochReport {
+    local epochLeadersLogsJson="$1"
+    local count=$(echo -n $epochLeadersLogsJson | getCountOfSlots)
+    if is_number $count; then
+        CURRENT_EPOCH=$epoch
+        CURRENT_EPOCH_BLOCK_COUNT=$count
+        SCHEDULED_AT_TIME_ARR=( $(echo -n $epochLeadersLogsJson | getScheduledTimes) )
+        SCHEDULED_AT_DATE_ARR=( $(echo -n $epochLeadersLogsJson | getScheduledDates) )
+        printNewEpochReport "no"
+        if [ -n "$T_AUTH_TOKEN" ] && [ -n "$T_CHANNEL_ID" ]; then
+            printNewEpochReport "yes" | sendToTelegram
         fi
+        LAST_REPORTED_EPOCH=$CURRENT_EPOCH
+    else
+        logError "Cannot get count of the slots for epoch \`${epoch}\`" >&2
+    fi
+}
+
+function doOnce {
+    local nodeStatsJson=$(fetchNodeStats)
+    if [ -z "$nodeStatsJson" ]; then
+        return 1
+    fi
+    local epoch=$(echo -n $nodeStatsJson | getCurrentEpoch)
+    if is_number $epoch; then
+        local leadersLogsJson=$(fetchLeadersLogs)
+        local epochLeadersLogsJson=$(echo -n $leadersLogsJson | getLeadersLogsForEpoch $epoch)
+        logTrace "$epochLeadersLogsJson" >&2
+
+        makeNewEpochReport "$epochLeadersLogsJson"
+
+        makeCreatedBlocksReports "$nodeStatsJson" "$leadersLogsJson"
+
+        PREVIOUS_LEADERS_JSON="$leadersLogsJson"
     else
         logError "Cannot get current epoch number" >&2
     fi
@@ -248,8 +397,8 @@ doOnce
 
 while [ -n "$INTERVAL" ]
 do
-    doOnce
     sleep "${INTERVAL}s"
+    doOnce
 done
 
 exit 0
