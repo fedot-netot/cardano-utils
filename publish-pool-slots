@@ -128,6 +128,18 @@ function getScheduledTimes {
     logTrace "getScheduledTimes.end" >&2
 }
 
+function getScheduledDates {
+    local EPOCH=$1
+    local JSON=$(cat)
+    logTrace "getScheduledDates.start" >&2
+    if [ -n "$JSON" ]; then
+        logTrace "getScheduledDates.1" >&2
+        echo -n "$JSON" | jq -r ".[] | .scheduled_at_date"
+        logTrace "getScheduledDates.2" >&2
+    fi
+    logTrace "getScheduledDates.end" >&2
+}
+
 CURRENT_EPOCH=
 CURRENT_EPOCH_BLOCK_COUNT=
 LAST_REPORTED_EPOCH=
@@ -164,9 +176,11 @@ function printReport {
                 fi
                 if [ -n "$WITH_SCHEDULE_TIMES" ] && (( ${#SCHEDULED_AT_TIME_ARR[*]} > 0 )); then
                     logNotice "Slots schedule:"
-                    for item in ${SCHEDULED_AT_TIME_ARR[*]}
+                    for idx in ${!SCHEDULED_AT_TIME_ARR[*]}
                     do
-                        logNotice "  <i>$(date '+%Y-%m-%d ' -u -d"@$item")<b><u>$(date '+%H:%M:%S' -u -d"@$item")</u></b> UTC</i>"
+                        local time_item="${SCHEDULED_AT_TIME_ARR[$idx]}"
+                        local slot_item="${SCHEDULED_AT_DATE_ARR[$idx]}"
+                        logNotice "  <i>$(date '+%Y-%m-%d ' -u -d"@$time_item")<b><u>$(date '+%H:%M:%S' -u -d"@$time_item")</u></b> UTC</i> / $(qs)$slot_item$(qe)"
                     done
                 fi
             fi
@@ -181,9 +195,11 @@ function printReport {
                 fi
                 if [ -n "$WITH_SCHEDULE_TIMES" ] && (( ${#SCHEDULED_AT_TIME_ARR[*]} > 0 )); then
                     logNotice "Slots schedule:"
-                    for item in ${SCHEDULED_AT_TIME_ARR[*]}
+                    for idx in ${!SCHEDULED_AT_TIME_ARR[*]}
                     do
-                        logNotice "  $(date '+%Y-%m-%d %H:%M:%S UTC' -u -d"@$item")"
+                        local time_item="${SCHEDULED_AT_TIME_ARR[$idx]}"
+                        local slot_item="${SCHEDULED_AT_DATE_ARR[$idx]}"
+                        logNotice "  $(date '+%Y-%m-%d %H:%M:%S UTC' -u -d"@$time_item") / $slot_item"
                     done
                 fi
             fi
@@ -212,6 +228,7 @@ function doOnce {
             CURRENT_EPOCH_BLOCK_COUNT=$_count
             logDebug "before getScheduledTimes" >&2
             SCHEDULED_AT_TIME_ARR=( $(echo -n $_json | getScheduledTimes $_epoch) )
+            SCHEDULED_AT_DATE_ARR=( $(echo -n $_json | getScheduledDates $_epoch) )
             logDebug "after getScheduledTimes" >&2
             printReport "no"
             if [ -n "$T_AUTH_TOKEN" ] && [ -n "$T_CHANNEL_ID" ]; then
