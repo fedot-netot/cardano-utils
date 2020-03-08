@@ -177,8 +177,8 @@ doOnce
 
 while [ -n "$REPORT_INTERVAL" ]
 do
-    doOnce
     sleep "${REPORT_INTERVAL}s"
+    doOnce
 done
 
 exit 0
