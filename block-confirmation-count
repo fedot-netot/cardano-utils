@@ -21,41 +21,36 @@ while getopts 'm:L:nh' c
 do
     case $c in
         m) if ! is_number $OPTARG; then
-               echo 'Wrong value for option `-m`' >&2
-               showHelp;
+               logError 'Wrong value for option `-m`' >&2
+               showHelp >&2;
                exit 1
            fi
            MAX_COUNT=$OPTARG
            ;;
         n) ONLY_NUMBER="yes" ;;
+        L) if ! parseLogLevel $OPTARG; then
+               logError 'Wrong value for option `-L`' >&2
+               showHelp >&2
+               exit 1
+           fi
+           ;;
         h) showHelp; exit 0 ;;
-        L) case "$OPTARG" in
-               error) LOG_LEVEL=1;;
-               warn) LOG_LEVEL=2;;
-               info) LOG_LEVEL=3;;
-               debug) LOG_LEVEL=4;;
-               trace) LOG_LEVEL=5;;
-               *) logError 'Wrong value for option `-L`' >&2; showHelp >&2; exit 1;;
-           esac;;
-        *) showHelp; exit 1 ;;
+        *) showHelp >&2; exit 1 ;;
     esac
 done
 
 shift $((OPTIND-1))
-
 if [ -n "$2" ]; then
-    echo "Odd argument specified: \`$2\`" >&2
-    showHelp
+    logError "Odd argument specified: \`$2\`" >&2
+    showHelp >&2
     exit 1
 fi
-
-
 
 BLOCK_ID=$1
 
 if [ -z "$BLOCK_ID" ]; then
-    echo 'BLOCK_ID is mandatory' >&2
-    showHelp
+    logError 'BLOCK_ID is mandatory' >&2
+    showHelp >&2
     exit 1
 fi
 

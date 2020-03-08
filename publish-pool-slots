@@ -57,14 +57,12 @@ do
            ;;
         a) T_AUTH_TOKEN="$OPTARG" ;;
         c) T_CHANNEL_ID="$OPTARG" ;;
-        L) case "$OPTARG" in
-               error) LOG_LEVEL=1;;
-               warn) LOG_LEVEL=2;;
-               info) LOG_LEVEL=3;;
-               debug) LOG_LEVEL=4;;
-               trace) LOG_LEVEL=5;;
-               *) logError 'Wrong value for option `-L`' >&2; showHelp >&2; exit 1;;
-           esac;;
+        L) if ! parseLogLevel $OPTARG; then
+               logError 'Wrong value for option `-L`' >&2
+               showHelp >&2
+               exit 1
+           fi
+           ;;
         d) ONLY_CHANGES=1 ;;
         j) WITH_JOURNALD=1;;
         t) WITH_SCHEDULE_TIMES=1;;
@@ -76,9 +74,11 @@ done
 function fetchCurrentEpoch {
     local JSON ERR_MSG
     eval "$( (jcli rest v0 node stats get --output-format=json | jq -r .lastBlockDate | cut -d. -f1) 2> >(ERR_MSG=$(cat); declare -p ERR_MSG) > >(JSON=$(cat); declare -p JSON) )"
-    if [ -n "$ERR_MSG" ]; then logError "$ERR_MSG" >&2; fi
     if [ -n "$JSON" ]; then
         echo -n "$JSON"
+    if [ -n "$ERR_MSG" ]; then
+        logError "$ERR_MSG" >&2
+        return 1
     fi
 }
 
@@ -96,7 +96,10 @@ function fetchSlotsJsonForEpoch {
     logDebug "enclave condition: $ENCLAVE_JSON" >&2
 
     eval "$( (jcli rest v0 leaders logs get --output-format=json) 2> >(ERR_MSG=$(cat); declare -p ERR_MSG) > >(JSON=$(cat); declare -p JSON) )"
-    if [ -n "$ERR_MSG" ]; then logError "$ERR_MSG" >&2; fi
+    if [ -n "$ERR_MSG" ]; then
+        logError "$ERR_MSG" >&2
+        return 1
+    fi
     if [ -n "$JSON" ]; then
         echo -n $JSON | jq "[( .[] | select ( [(.scheduled_at_date|startswith(\"${EPOCH}.\")), ${ENCLAVE_JSON} ] | all) )] | sort_by( .scheduled_at_time | strptime(\"%Y-%m-%dT%H:%M:%S%z\") | mktime)"
     fi

@@ -102,6 +102,19 @@ function printIntervalShortly {
 }
 
 
+function parseLogLevel()
+{
+    local LEVEL=$1
+    case "$LEVEL" in
+        error) LOG_LEVEL=1;;
+        warn) LOG_LEVEL=2;;
+        info) LOG_LEVEL=3;;
+        debug) LOG_LEVEL=4;;
+        trace) LOG_LEVEL=5;;
+        *) return 1;;
+    esac
+}
+
 function logError {
     if (( LOG_LEVEL >= 1  )); then
         if [ "$SIMPLE_LOGGING" == "yes" ]; then

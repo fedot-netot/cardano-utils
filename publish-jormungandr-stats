@@ -30,7 +30,7 @@ CHANNEL_ID="$TELEGRAM_CHANNEL_ID"
 # Access token for Telegram Bot API
 AUTH_TOKEN=$TELEGRAM_BOT_AUTH_TOKEN
 
-while getopts 'p:r:i:a:c:h' c
+while getopts 'p:r:i:a:c:L:h' c
 do
     case $c in
         p) POOL_ID="$OPTARG" ;;
@@ -38,6 +38,12 @@ do
         i) INTERVAL="$OPTARG" ;;
         a) AUTH_TOKEN="$OPTARG" ;;
         c) CHANNEL_ID="$OPTARG" ;;
+        L) if ! parseLogLevel $OPTARG; then
+               logError 'Wrong value for option `-L`' >&2
+               showHelp >&2
+               exit 1
+           fi
+           ;;
         h) showHelp; exit 0 ;;
         ?) showHelp >&2; exit 1;;
     esac

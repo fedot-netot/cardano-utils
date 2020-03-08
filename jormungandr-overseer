@@ -165,14 +165,12 @@ do
                exit 1
            fi
            ;;
-        L) case "$OPTARG" in
-               error) LOG_LEVEL=1;;
-               warn) LOG_LEVEL=2;;
-               info) LOG_LEVEL=3;;
-               debug) LOG_LEVEL=4;;
-               trace) LOG_LEVEL=5;;
-               *) logError 'Wrong value for option `-L`' >&2; showHelp >&2; exit 1;;
-           esac;;
+        L) if ! parseLogLevel $OPTARG; then
+               logError 'Wrong value for option `-L`' >&2
+               showHelp >&2
+               exit 1
+           fi
+           ;;
         j) WITH_JOURNALD=1;;
         a) T_AUTH_TOKEN="$OPTARG" ;;
         c) T_CHANNEL_ID="$OPTARG" ;;
@@ -203,7 +201,7 @@ function isCriticalLag {
     PREV_TIME=$2
     MAX_LAG=${3:-$CRITICAL_LAG_IN_SEC}
     if !(is_number $LAST_TIME && is_number $PREV_TIME); then
-        logError "Not numeric arguments!!!"
+        logError "Not numeric arguments!!!" >&2
         return 1
     fi
     LAG=$(( LAST_TIME - PREV_TIME ))
@@ -317,7 +315,10 @@ function readJormungandrState {
 
     eval "$( (jcli rest v0 node stats get --output-format=json) 2> >(ERR_MSG=$(cat); declare -p ERR_MSG) > >(JSON=$(cat); declare -p JSON) )"
 
-    if [ -n "$ERR_MSG" ]; then logError "$ERR_MSG"; fi
+    if [ -n "$ERR_MSG" ]; then
+        logError "$ERR_MSG" >&2
+        return 1
+    fi
     state=$(echo -n $JSON | jq -r .state)
     if isRunningState $state; then
         lastBlockTime=$(date +%s -d$( echo -n "$JSON" | jq -r .lastBlockTime 2>/dev/null) 2>/dev/null)
@@ -546,9 +547,9 @@ do
     if [ -z "$state" ]; then
         if [ -z "$PREV_CHECK_DATE" ]; then
             if is_number "$CONNECTIONS"; then
-                logError "Jormungandr is started but not responding or something wrong with our script"
+                logError "Jormungandr is started but not responding or something wrong with our script" >&2
             else
-                logWarn "Starting jormungandr because it looking stopped."
+                logWarn "Starting jormungandr because it looking stopped." >&2
                 stopJormungandr
                 startJormungandr
             fi;
@@ -609,7 +610,7 @@ do
             fi
             (( LAST_BOOTSTRAP_DURATION = 0 ))
         else
-            logError "Unknown node state: $state"
+            logError "Unknown node state: $state" >&2
         fi
     fi
 
