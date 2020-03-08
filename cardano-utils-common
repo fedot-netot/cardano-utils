@@ -215,20 +215,17 @@ function postHtmlToTelegram {
 }
 
 
-function evalx()
+function catch()
 {
     local ___EVALX_CMD_SDTOUT_VAR=$1
     local ___EVALX_CMD_SDTERR_VAR=$2
 
     logTrace "${@:3}" >&2
 
-#    eval "$( ( eval ${@:3} ) 2> >(___EVALX_STDERR=$(cat);declare -p ___EVALX_STDERR) 1> >(___EVALX_STDOUT=$(cat);declare -p ___EVALX_STDOUT);(___EVALX_RESULT_CODE=$?;declare -p ___EVALX_RESULT_CODE))"
     eval "$( ( eval ${@:3} ) 2> >(___EVALX_STDERR=$(cat);declare -p ___EVALX_STDERR) 1> >(___EVALX_STDOUT=$(cat);declare -p ___EVALX_STDOUT))"
-
+    
     eval $___EVALX_CMD_SDTOUT_VAR="'$___EVALX_STDOUT'"
     eval $___EVALX_CMD_SDTERR_VAR="'$___EVALX_STDERR'"
-
-#    return $___EVALX_RESULT_CODE
 }
 
 function isNotFoundMessage {

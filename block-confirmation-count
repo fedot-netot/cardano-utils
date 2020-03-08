@@ -54,7 +54,7 @@ if [ -z "$BLOCK_ID" ]; then
     exit 1
 fi
 
-evalx COUNT ERR_MSG "curl -sSf $JORMUNGANDR_RESTAPI_URL/v0/block/$BLOCK_ID/next_id?count=$MAX_COUNT | xxd -p -c32 | wc -l"
+catch COUNT ERR_MSG "curl -sSf $JORMUNGANDR_RESTAPI_URL/v0/block/$BLOCK_ID/next_id?count=$MAX_COUNT | xxd -p -c32 | wc -l"
 
 if [ -n "$ERR_MSG" ]; then
     logError "$ERR_MSG" >&2

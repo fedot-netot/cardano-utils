@@ -68,7 +68,7 @@ fi
 function fetchStake {
     local JSON ERR_MSG
 
-    evalx JSON ERR_MSG "curl -sSf $JORMUNGANDR_RESTAPI_URL/v0/stake_pool/$POOL_ID"
+    catch JSON ERR_MSG "curl -sSf $JORMUNGANDR_RESTAPI_URL/v0/stake_pool/$POOL_ID"
     if [ -n "$ERR_MSG" ]; then
         logError "$ERR_MSG" >&2
         return 1
@@ -81,7 +81,7 @@ function fetchStake {
 
 function fetchActveStake {
     local JSON ERR_MSG
-    evalx JSON ERR_MSG "curl -sSf $JORMUNGANDR_RESTAPI_URL/v0/stake | jq '{ epoch, stake: (.stake.pools[] | select(.[0]==\"$POOL_ID\") | .[1] ) }'"
+    catch JSON ERR_MSG "curl -sSf $JORMUNGANDR_RESTAPI_URL/v0/stake | jq '{ epoch, stake: (.stake.pools[] | select(.[0]==\"$POOL_ID\") | .[1] ) }'"
     if [ -n "$ERR_MSG" ]; then
         logError "$ERR_MSG" >&2
         return 1
