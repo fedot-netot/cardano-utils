@@ -1,6 +1,6 @@
 #!/bin/bash
 
-. cardano-utils-common
+. $(dirname $0)/cardano-utils-common
 
 trap exit1 TERM
 trap exit1_ INT

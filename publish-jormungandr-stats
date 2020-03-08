@@ -1,6 +1,6 @@
 #!/bin/bash
 
-. cardano-utils-common
+. $(dirname $0)/cardano-utils-common
 
 # Default value of command which output will be sent to the log
 DEFAULT_REPORT_CMD='jcli rest v0 node stats get; echo "\nNeigbors: $(netstat -tnp 2> /dev/null| grep -E ''ESTABLISHED.+jormungandr'' | cut -c45-65 | sort | uniq | wc -l)"'
