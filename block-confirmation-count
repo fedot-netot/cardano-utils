@@ -54,30 +54,15 @@ if [ -z "$BLOCK_ID" ]; then
     exit 1
 fi
 
-function getNextBlock {
-    local TEXT ERR_MSG
-    local THIS_BLOCK_ID=$(cat)
-    unset STAKE_INFO_OUTPUT
-    eval "$( (jcli rest v0 block ${THIS_BLOCK_ID} next-id get) 2> >(ERR_MSG=$(cat); declare -p ERR_MSG) > >(TEXT=$(cat); declare -p TEXT) )"
-    if [ -n "$ERR_MSG" ]; then logError "$ERR_MSG" >&2; fi
-    if [ -n "$TEXT" ]; then
-        echo -n $TEXT
-    fi
-}
+evalx COUNT ERR_MSG "curl -sSf $JORMUNGANDR_RESTAPI_URL/v0/block/$BLOCK_ID/next_id?count=$MAX_COUNT | xxd -p -c32 | wc -l"
 
-COUNTER=0
-NEXT_BLOCK_ID=$(echo -n "$BLOCK_ID" | getNextBlock)
-
-while [ -n "$NEXT_BLOCK_ID" ]
-do
-    logTrace "next-id: $NEXT_BLOCK_ID" >&2
-    (( COUNTER++ ))
-    (( COUNTER >= MAX_COUNT )) && break
-    NEXT_BLOCK_ID=$(echo -n "$NEXT_BLOCK_ID" | getNextBlock)
-done
+if [ -n "$ERR_MSG" ]; then
+    logError "$ERR_MSG" >&2
+    exit 1
+fi
 
 if [ -n "$ONLY_NUMBER" ]; then
-    printf "%d" $COUNTER
+    printf "%d" $COUNT
 else
-    echo "Confirmation blocks count: $COUNTER"
+    echo "Confirmation blocks count: $COUNT"
 fi

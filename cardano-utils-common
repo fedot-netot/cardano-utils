@@ -1,5 +1,8 @@
 # -*- mode: shell-script -*-
 
+DEFAULT_JORMUNGANDR_REST_API_PORT=3001
+JORMUNGANDR_RESTAPI_URL=${JORMUNGANDR_RESTAPI_URL:-http://127.0.0.1:$DEFAULT_JORMUNGANDR_REST_API_PORT/api}
+
 WITH_JOURNALD=0
 LOG_LEVEL=3 # 1 - error, 2 - warn, 3 - info, 4 - debug, 5 - trace
 
@@ -209,4 +212,20 @@ function postHtmlToTelegram {
              --data-urlencode text@- \
              > /dev/null
     fi
+}
+
+
+function evalx()
+{
+    local ___EVALX_CMD_SDTOUT_VAR=$1
+    local ___EVALX_CMD_SDTERR_VAR=$2
+
+    logTrace "${@:3}" >&2
+
+    eval "$( ( eval ${@:3} ) 2> >(___EVALX_STDERR=$(cat);declare -p ___EVALX_STDERR) 1> >(___EVALX_STDOUT=$(cat);declare -p ___EVALX_STDOUT);(___EVALX_RESULT_CODE=$?;declare -p ___EVALX_RESULT_CODE))"
+
+    eval $___EVALX_CMD_SDTOUT_VAR="'$___EVALX_STDOUT'"
+    eval $___EVALX_CMD_SDTERR_VAR="'$___EVALX_STDERR'"
+
+    return $___EVALX_RESULT_CODE
 }

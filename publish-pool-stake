@@ -46,14 +46,12 @@ do
            ;;
         a) T_AUTH_TOKEN="$OPTARG" ;;
         c) T_CHANNEL_ID="$OPTARG" ;;
-        L) case "$OPTARG" in
-               error) LOG_LEVEL=1;;
-               warn) LOG_LEVEL=2;;
-               info) LOG_LEVEL=3;;
-               debug) LOG_LEVEL=4;;
-               trace) LOG_LEVEL=5;;
-               *) logError 'Wrong value for option `-L`' >&2; showHelp >&2; exit 1;;
-           esac;;
+        L) if ! parseLogLevel $OPTARG; then
+               logError 'Wrong value for option `-L`' >&2
+               showHelp >&2
+               exit 1
+           fi
+           ;;
         d) ONLY_CHANGES=1 ;;
         j) WITH_JOURNALD=1;;
         h) showHelp; exit 0 ;;
@@ -69,23 +67,26 @@ fi
 
 function fetchStake {
     local JSON ERR_MSG
-    unset POOL_INFO_OUTPUT
 
-    eval "$( (jcli rest v0 stake-pool get --output-format=json $POOL_ID) 2> >(ERR_MSG=$(cat); declare -p ERR_MSG) > >(JSON=$(cat); declare -p JSON) )"
-    if [ -n "$ERR_MSG" ]; then logError "$ERR_MSG"; fi
+    evalx JSON ERR_MSG "curl -sSf $JORMUNGANDR_RESTAPI_URL/v0/stake_pool/$POOL_ID"
+    if [ -n "$ERR_MSG" ]; then
+        logError "$ERR_MSG" >&2
+        return 1
+    fi
     if [ -n "$JSON" ]; then
-        POOL_INFO_OUTPUT="$JSON"
+
         STAKE=$(echo $JSON | jq -r .total_stake)
     fi
 }
 
 function fetchActveStake {
     local JSON ERR_MSG
-    unset STAKE_INFO_OUTPUT
-    eval "$( (jcli rest v0 stake get --output-format=json | jq "{ epoch, stake: (.stake.pools[] | select(.[0]==\"$POOL_ID\") | .[1] ) }") 2> >(ERR_MSG=$(cat); declare -p ERR_MSG) > >(JSON=$(cat); declare -p JSON) )"
-    if [ -n "$ERR_MSG" ]; then logError "$ERR_MSG"; fi
+    evalx JSON ERR_MSG "curl -sSf $JORMUNGANDR_RESTAPI_URL/v0/stake | jq '{ epoch, stake: (.stake.pools[] | select(.[0]==\"$POOL_ID\") | .[1] ) }'"
+    if [ -n "$ERR_MSG" ]; then
+        logError "$ERR_MSG" >&2
+        return 1
+    fi
     if [ -n "$JSON" ]; then
-        STAKE_INFO_OUTPUT="$JSON"
         ACTIVE_STAKE_EPOCH=$(echo -n $JSON | jq -r .epoch)
         ACTIVE_STAKE=$(echo -n $JSON | jq -r .stake)
     fi

@@ -72,19 +72,17 @@ do
 done
 
 function fetchCurrentEpoch {
-    local JSON ERR_MSG
-    eval "$( (jcli rest v0 node stats get --output-format=json | jq -r .lastBlockDate | cut -d. -f1) 2> >(ERR_MSG=$(cat); declare -p ERR_MSG) > >(JSON=$(cat); declare -p JSON) )"
-    if [ -n "$JSON" ]; then
-        echo -n "$JSON"
+    local EPOCH ERR_MSG
+    evalx EPOCH ERR_MSG "curl -sSf $JORMUNGANDR_RESTAPI_URL/v0/node/stats  | jq -r .lastBlockDate | cut -d. -f1"
     if [ -n "$ERR_MSG" ]; then
         logError "$ERR_MSG" >&2
         return 1
     fi
+    echo -n "$EPOCH"
 }
 
 function fetchSlotsJsonForEpoch {
     local EPOCH=$1
-    local JSON ERR_MSG
     local ENCLAVE_JSON=true
 
     if (( ${#ENCLAVE_LEADER_ID[*]} > 0 )); then
@@ -95,7 +93,8 @@ function fetchSlotsJsonForEpoch {
 
     logDebug "enclave condition: $ENCLAVE_JSON" >&2
 
-    eval "$( (jcli rest v0 leaders logs get --output-format=json) 2> >(ERR_MSG=$(cat); declare -p ERR_MSG) > >(JSON=$(cat); declare -p JSON) )"
+    local JSON ERR_MSG
+    evalx JSON ERR_MSG "curl -sSf $JORMUNGANDR_RESTAPI_URL/v0/leaders/logs"
     if [ -n "$ERR_MSG" ]; then
         logError "$ERR_MSG" >&2
         return 1

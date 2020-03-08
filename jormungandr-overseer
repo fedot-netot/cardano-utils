@@ -310,10 +310,10 @@ function isRunningState {
 }
 
 function readJormungandrState {
-    local JSON ERR_MSG
     unset state lastBlockTime lastReceivedBlockTime uptime
 
-    eval "$( (jcli rest v0 node stats get --output-format=json) 2> >(ERR_MSG=$(cat); declare -p ERR_MSG) > >(JSON=$(cat); declare -p JSON) )"
+    local JSON ERR_MSG
+    evalx JSON ERR_MSG "curl -sSf $JORMUNGANDR_RESTAPI_URL/v0/node/stats"
 
     if [ -n "$ERR_MSG" ]; then
         logError "$ERR_MSG" >&2
