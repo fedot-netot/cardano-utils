@@ -165,7 +165,7 @@ function logTrace {
 function lovelaces2ada {
     local VALUE=$1
     local SCALE=${2:-2}
-    printf "%'.${SCALE}f" $(echo "scale=6; ${VALUE}/1000000" | bc -l)
+    local LANG=en_US.UTF-8; printf "%'.${SCALE}f" $(echo "scale=6; ${VALUE}/1000000" | bc -l)
 }
 
 function printStake {
