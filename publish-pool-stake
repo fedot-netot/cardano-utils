@@ -9,7 +9,7 @@ usage: $(basename $0) -p POOL_ID [-n HEADER] [-r INTERVAL] [-a TELEGRAM_ACCESS_T
   -p  Pool id. Mandatory parameter.
   -n  Pool name/identifier. You can use the ticker of your pool here.
   -r  Report inteval. If not specified then send info only once and exit.
-  -d  Publish only in the case of changes. Do not publish state on the moment of start\.
+  -d  Publish only in the case of changes. Do not publish state at the moment of start\.
   -a  Bot access token. If not specified then environment variable with name \`TELEGRAM_BOT_AUTH_TOKEN\`
       will be used for authentication. If none specified then telegram output will not be used.
   -c  Telegram channel to which send messages. E.g. \`@CardanoNodesHeartbeat\`. If not specified then

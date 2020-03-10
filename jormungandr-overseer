@@ -423,7 +423,7 @@ function logLastPeriod()
 
     function log {
         if [ "$SIMPLE_LOGGING" == "yes" ]; then
-            logNotice "===== <b>Last $(printIntervalShortly $(( REPORT_INTERVAL ))) statistic</b> ====="
+            logNotice "===== <b>Last $(printIntervalShortly $(( REPORT_INTERVAL ))) statistics</b> ====="
 
             logNotice "Node was running: <u><b><i>${uptime_percent}%</i></b></u> of time"
             if (( LAST_REPORT_PERIOD_TOTAL_UPTIME_COUNT > 1 )); then
