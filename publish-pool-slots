@@ -6,7 +6,7 @@
 function showHelp() {
     cat <<EOF
 usage: $(basename $0) [-e ENCLAVE] [-n HEADER] [-i INTERVAL] [-a TELEGRAM_ACCESS_TOKEN] [-c CHANNEL_ID]
-          [-t] [-T] [-d] [-L LOG_LEVEL] [-j] [-h]
+          [-C] [-S] [-T] [-d] [-L LOG_LEVEL] [-j] [-h]
   -e  Enclave leader id. It is integer number. It is helpfull if node carries leadership of several pools.
       If specified then only slots of this enclave leader will be counted. If not specified then all slots
       will be counted regardles of which enclave it belongs to.
@@ -21,8 +21,9 @@ usage: $(basename $0) [-e ENCLAVE] [-n HEADER] [-i INTERVAL] [-a TELEGRAM_ACCESS
       the environment variable \`TELEGRAM_CHANNEL_ID\` will be used.
   -L  Log level. One of the values \`error\`, \`warn\`, \`info\`, \`debug\`, \`trace\`. Only messages with
       this and stronger severity level will be logged.
-  -t  Include into the report the slots schedule.
-  -T  Report block creation events.
+  -C  Do not report count of slots for an epoch.
+  -S  Do not include into the report the slots schedule.
+  -T  Do not report block creation events.
   -j  Prepare messages for journald severity levels.
   -h  Show this help.
 
@@ -39,7 +40,7 @@ CHANNEL_ID="$TELEGRAM_CHANNEL_ID"
 # Access token for Telegram Bot API
 T_AUTH_TOKEN=$TELEGRAM_BOT_AUTH_TOKEN
 
-while getopts 'e:n:i:a:c:L:tTdjh' c
+while getopts 'e:n:i:a:c:L:CSTdjh' c
 do
     case $c in
         e) if ! is_number "$OPTARG"; then
@@ -66,8 +67,9 @@ do
            ;;
         d) ONLY_CHANGES=1 ;;
         j) WITH_JOURNALD=1;;
-        t) WITH_SCHEDULE_TIMES=1;;
-        T) WITH_BLOCK_CREATION_EVENTS=1;;
+        C) WO_SLOTS_COUNT=1;;
+        S) WO_SCHEDULE_TIMES=1;;
+        T) WO_BLOCK_CREATION_EVENTS=1;;
         h) showHelp; exit 0 ;;
         ?) showHelp >&2; exit 1;;
     esac
@@ -305,12 +307,14 @@ function printNewEpochReport {
     if [ "$SIMPLE_LOGGING" == "yes" ]; then
         if [ -n "$CURRENT_EPOCH" ] && is_number $CURRENT_EPOCH_BLOCK_COUNT; then
             if ([ -z "$ONLY_CHANGES" ] || [ -n "$LAST_REPORTED_EPOCH" ] ) && (( CURRENT_EPOCH != LAST_REPORTED_EPOCH )); then
-                if (( CURRENT_EPOCH_BLOCK_COUNT == 1 )); then
-                    logNotice "$(qs)${CURRENT_EPOCH_BLOCK_COUNT}$(qe) slot was allocated for the epoch $(qs)${CURRENT_EPOCH}$(qe)."
-                else
-                    logNotice "$(qs)${CURRENT_EPOCH_BLOCK_COUNT}$(qe) slots were allocated for the epoch $(qs)${CURRENT_EPOCH}$(qe)."
+                if [ -z "$WO_SLOTS_COUNT" ]; then
+                    if (( CURRENT_EPOCH_BLOCK_COUNT == 1 )); then
+                        logNotice "$(qs)${CURRENT_EPOCH_BLOCK_COUNT}$(qe) slot was allocated for the epoch $(qs)${CURRENT_EPOCH}$(qe)."
+                    else
+                        logNotice "$(qs)${CURRENT_EPOCH_BLOCK_COUNT}$(qe) slots were allocated for the epoch $(qs)${CURRENT_EPOCH}$(qe)."
+                    fi
                 fi
-                if [ -n "$WITH_SCHEDULE_TIMES" ] && (( ${#SCHEDULED_AT_TIME_ARR[*]} > 0 )); then
+                if [ -z "$WO_SCHEDULE_TIMES" ] && (( ${#SCHEDULED_AT_TIME_ARR[*]} > 0 )); then
                     logNotice "Slots schedule:"
                     for idx in ${!SCHEDULED_AT_TIME_ARR[*]}
                     do
@@ -324,12 +328,14 @@ function printNewEpochReport {
     else
         if [ -n "$CURRENT_EPOCH" ] && is_number $CURRENT_EPOCH_BLOCK_COUNT; then
             if ([ -z "$ONLY_CHANGES" ] || [ -n "$LAST_REPORTED_EPOCH" ] ) && (( CURRENT_EPOCH != LAST_REPORTED_EPOCH )); then
-                if (( CURRENT_EPOCH_BLOCK_COUNT == 1 )); then
-                    logNotice "${CURRENT_EPOCH_BLOCK_COUNT} slot was allocated for the epoch ${CURRENT_EPOCH}$(conditional_ticker)."
-                else
-                    logNotice "${CURRENT_EPOCH_BLOCK_COUNT} slots were allocated for the epoch ${CURRENT_EPOCH}$(conditional_ticker)."
+                if [ -z "$WO_SLOTS_COUNT" ]; then
+                    if (( CURRENT_EPOCH_BLOCK_COUNT == 1 )); then
+                        logNotice "${CURRENT_EPOCH_BLOCK_COUNT} slot was allocated for the epoch ${CURRENT_EPOCH}$(conditional_ticker)."
+                    else
+                        logNotice "${CURRENT_EPOCH_BLOCK_COUNT} slots were allocated for the epoch ${CURRENT_EPOCH}$(conditional_ticker)."
+                    fi
                 fi
-                if [ -n "$WITH_SCHEDULE_TIMES" ] && (( ${#SCHEDULED_AT_TIME_ARR[*]} > 0 )); then
+                if [ -z "$WO_SCHEDULE_TIMES" ] && (( ${#SCHEDULED_AT_TIME_ARR[*]} > 0 )); then
                     logNotice "Slots schedule:"
                     for idx in ${!SCHEDULED_AT_TIME_ARR[*]}
                     do
@@ -383,7 +389,7 @@ function doOnce {
 
         makeNewEpochReport "$epochLeadersLogsJson"
 
-        if [ -n "$WITH_BLOCK_CREATION_EVENTS" ]; then
+        if [ -z "$WO_BLOCK_CREATION_EVENTS" ]; then
             makeCreatedBlocksReports "$nodeStatsJson" "$leadersLogsJson"
         fi
 

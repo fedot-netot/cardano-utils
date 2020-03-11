@@ -1,0 +1,251 @@
+#!/bin/bash
+
+. $(dirname $0)/cardano-utils-common
+
+PLATFORM='Free cardano pool utils'
+
+function showHelp() {
+    cat <<EOF
+usage: $(basename $0) [-i INTERVAL] [-p POOLID] [-u USERID] [-g GENESISPREF] [-e ENCLAVE]
+      [-L LOG_LEVEL] [-j] [-h]
+  -i  Interval that will be used for regular checking.
+      If not specified then send info only once and exit.
+  -p  Pool id. This argument is mandatory.
+  -u  Pooltool user API KEY. If not specified then environment variable with name \`POOLTOOL_API_KEY\`
+      will be used for authentication. This parameter is mandatory.
+  -g  Genesis block hash prefix as needed for pooltool service.
+  -e  Enclave leader id. It is integer number. It is helpfull if node carries leadership of several pools.
+      If specified then only slots of this enclave leader will be counted. If not specified then all slots
+      will be counted regardles of which enclave it belongs to.
+  -C  Do not report count of slots for an epoch.
+  -T  Do not report current tip of the node blockchain.
+  -L  Log level. One of the values \`error\`, \`warn\`, \`info\`, \`debug\`, \`trace\`. Only messages with
+      this and stronger severity level will be logged.
+  -j  Prepare messages for journald severity levels.
+  -h  Show this help.
+
+This scrip send information about slots count to pooltool.io statistics service.
+
+By default, it is assumed that all time INTERVALs are set in seconds. But you can explicitly specify time units:
+\`s\` - seconds, \`m\` - minutes, \`h\` - hours, \`d\` - days, \`w\` - weeks. E.g. \`25s\`, \`15m\`, \`1h\`.
+EOF
+}
+
+POOLTOOL_USER_ID=$POOLTOOL_API_KEY
+
+while getopts 'i:p:u:g:e:L:CTjh' c
+do
+    case $c in
+        i) INTERVAL=$(printf "%s" $OPTARG | parseInterval)
+           if [ -z $INTERVAL ] || (( INTERVAL < 0 )); then
+               logError 'Wrong value for option `-r`' >&2
+               showHelp >&2
+               exit 1
+           fi
+           ;;
+        p) POOL_ID="$OPTARG";;
+        u) POOLTOOL_USER_ID="$OPTARG";;
+        g) GENESISPREF="$OPTARG";;
+        e) if ! is_number "$OPTARG"; then
+               logError 'Wrong value for option `-e`' >&2
+               showHelp >&2
+               exit 1
+           fi
+           ENCLAVE_LEADER_ID="$OPTARG" ;;
+        L) if ! parseLogLevel $OPTARG; then
+               logError 'Wrong value for option `-L`' >&2
+               showHelp >&2
+               exit 1
+           fi
+           ;;
+        C) WO_SLOTS_COUNT_REPORT=1;;
+        T) WO_TIP_REPORT=1;;
+        j) WITH_JOURNALD=1;;
+        h) showHelp; exit 0 ;;
+        ?) showHelp >&2; exit 1;;
+    esac
+done
+
+if [ -z "$POOL_ID" ]; then
+    logError 'Option `-p` is mandatory' >&2
+    show_help=yes
+fi
+if [ -z "$POOLTOOL_USER_ID" ]; then
+    logError 'Option `-u` is mandatory' >&2
+    show_help=yes
+fi
+if [ -z "$GENESISPREF" ]; then
+    logError 'Option `-g` is mandatory' >&2
+    show_help=yes
+fi
+if [ -n "$show_help" ]; then
+    showHelp >&2
+    exit 1
+fi
+
+
+CURRENT_EPOCH=
+CURRENT_EPOCH_BLOCK_COUNT=
+LAST_REPORTED_EPOCH=
+LAST_EPOCH_THAT_CAME=
+LAST_SLOTS_COUNT_REPORT_TRY_TIME=
+
+function fetchNodeStats {
+    local JSON ERR_MSG
+    catch JSON ERR_MSG "curl -sSf $JORMUNGANDR_RESTAPI_URL/v0/node/stats"
+    if [ -n "$ERR_MSG" ]; then
+        logError "$ERR_MSG" >&2
+        return 1
+    fi
+    echo -n "$JSON"
+}
+
+function getCurrentEpoch {
+    # STDIN: node stats json
+
+    jq -r '.lastBlockDate' | cut -d. -f1
+}
+
+function fetchLeadersLogs {
+    local JSON ERR_MSG
+
+    logDebug "$ENCLAVE_LEADER_ID" >&2
+    local ENCLAVE_JSON="true"
+    if [ -n "$ENCLAVE_LEADER_ID" ]; then
+        ENCLAVE_JSON=$(printf '.enclave_leader_id==%d' $ENCLAVE_LEADER_ID)
+    fi
+
+    local JSON ERR_MSG
+    catch JSON ERR_MSG "curl -sSf $JORMUNGANDR_RESTAPI_URL/v0/leaders/logs"
+    if [ -n "$ERR_MSG" ]; then
+        logError "$ERR_MSG" >&2
+        return 1
+    fi
+    logDebug "${ENCLAVE_JSON}" >&2
+    if [ -n "$JSON" ]; then
+        echo -n $JSON | \
+            jq "[( .[] | select(${ENCLAVE_JSON}) )]"
+    fi
+}
+
+function getSlotsCountForEpoch {
+    # STDIN: leaders logs json
+
+    local EPOCH=$1
+    jq --arg EPOCH "$EPOCH" \
+       '[ .[] | select(.scheduled_at_date|startswith($EPOCH+".")) ] | length'
+}
+
+function sendSlotsCountToPooltool {
+    local EPOCH=$1
+    local SLOTS_COUNT=$2
+
+    local PAYLOAD=$(jq -n -c \
+                       --arg CURRENTEPOCH "$EPOCH" \
+                       --arg POOLID "$POOL_ID" \
+                       --arg USERID "$POOLTOOL_USER_ID" \
+                       --arg GENESISPREF "$GENESISPREF" \
+                       --arg ASSIGNED "$SLOTS_COUNT" \
+                       '{currentepoch: $CURRENTEPOCH, poolid: $POOLID,  genesispref: $GENESISPREF, userid: $USERID, assigned_slots: $ASSIGNED}'
+          )
+    logInfo "Sending count of assigned slots to pooltool.io"
+    logInfo "Request payload: $PAYLOAD"
+
+    local RESPONSE=$(echo -n "$PAYLOAD" | curl -sSf \
+                                               -H 'Accept: application/json' \
+                                               -H 'Content-Type:application/json' \
+                                               -X POST --data @- \
+                                               'https://api.pooltool.io/v0/sendlogs')
+    local RESULT_CODE=$?
+    [ -n "$RESPONSE" ] && logInfo "Response: $RESPONSE"
+    return $RESULT_CODE
+}
+
+function sendTipToPoolTool {
+    local nodeStatsJson="$1"
+
+    local lastBlockHeight=$(echo -n $nodeStatsJson | jq -cr '.lastBlockHeight')
+    local lastBlockHash=$(echo -n $nodeStatsJson | jq -cr '.lastBlockHash')
+    local jormVersion=$(echo -n $nodeStatsJson | jq -cr '.version')
+
+    if [ -n "$lastBlockHeight" ] && [ -n "$lastBlockHash" ]; then
+        local BLOCK=$(curl -sSf "$JORMUNGANDR_RESTAPI_URL/v0/block/$lastBlockHash" | xxd -ps -c9999999999)
+        if (( $? == 0 )) && [ -n "$BLOCK" ]; then
+            local lastPoolID=${BLOCK:168:64}
+            local lastParent=${BLOCK:104:64}
+            local lastSlot=$((0x${BLOCK:24:8}))
+            local lastEpoch=$((0x${BLOCK:16:8}))
+            local RESPONSE=$(curl -sSf -X GET --get \
+                                  --data-urlencode "platform=${PLATFORM}" \
+                                  --data-urlencode "jormver=${jormVersion}" \
+                                  --data "poolid=${POOL_ID}" \
+                                  --data "userid=${POOLTOOL_USER_ID}" \
+                                  --data "genesispref=${GENESISPREF}" \
+                                  --data "mytip=${lastBlockHeight}" \
+                                  --data "lasthash=${lastBlockHash}" \
+                                  --data "lastpool=${lastPoolID}" \
+                                  --data "lastparent=${lastParent}" \
+                                  --data "lastslot=${lastSlot}" \
+                                  --data "lastepoch=${lastEpoch}" \
+                                  "https://api.pooltool.io/v0/sharemytip"
+                  )
+            local RESULT_CODE=$?
+
+            local logMessage="Publish tip request: curl -sSf --get --data-urlencode 'platform=${PLATFORM}' --data-urlencode 'jormver=${jormVersion}' https://api.pooltool.io/v0/sharemytip?poolid=${POOL_ID}&userid=${POOLTOOL_USER_ID}&genesispref=${GENESISPREF}&mytip=${lastBlockHeight}&lasthash=${lastBlockHash}&lastpool=${lastPoolID}&lastparent=${lastParent}&lastslot=${lastSlot}&lastepoch=${lastEpoch}"
+            if (( RESULT_CODE != 0 )); then
+                logWarn "$logMessage"
+                [ -n "$RESPONSE" ] && logWarn "Responce: $RESPONSE"
+                logWarn "Return code is not 0"
+            else
+                logTrace "$logMessage"
+                [ -n "$RESPONSE" ] && logTrace "Responce: $RESPONSE"
+            fi
+        fi
+    fi
+}
+
+function doOnce {
+    local nodeStatsJson=$(fetchNodeStats)
+    if [ -z "$nodeStatsJson" ]; then
+        return 1
+    fi
+    local epoch=$(echo -n $nodeStatsJson | getCurrentEpoch)
+    if is_number $epoch; then
+        if [ -z "$WO_SLOTS_COUNT_REPORT" ]; then
+            if (( $epoch > ${LAST_REPORTED_EPOCH:-0} )); then
+                if (( $epoch > ${LAST_EPOCH_THAT_CAME:-0} )); then
+                    sleep 11 # After epoch change wait a little to not overload polltool service as everybody will proceed this time
+                    LAST_EPOCH_THAT_CAME=$epoch
+                fi
+                local currentTime=$(date +%s)
+                if (( $currentTime > (${LAST_SLOTS_COUNT_REPORT_TRY_TIME:-0} + 300) )); # Try not more than once every 5 minutes
+                then
+                    local slotsCount=$(fetchLeadersLogs | getSlotsCountForEpoch "$epoch")
+                    if is_number $slotsCount; then
+                        LAST_SLOTS_COUNT_REPORT_TRY_TIME=$(date +%s)
+                        sendSlotsCountToPooltool $epoch $slotsCount && \
+                            LAST_REPORTED_EPOCH="$epoch"
+                    else
+                        logError "Cannot get count of slots" >&2
+                    fi
+                fi
+            fi
+        fi
+        if [ -z "$WO_TIP_REPORT" ]; then
+            sendTipToPoolTool "$nodeStatsJson"
+        fi
+    else
+        logError "Cannot get current epoch number" >&2
+    fi
+}
+
+
+doOnce
+
+while [ -n "$INTERVAL" ]
+do
+    sleep "${INTERVAL}s"
+    doOnce
+done
+
+exit 0
