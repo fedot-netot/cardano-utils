@@ -294,7 +294,7 @@ function restartJormungandr {
 }
 
 function isBootstrappingState {
-    if [ "$1" == "Bootstrapping" ] || [ "$1" == "PreparingBlock0" ]; then
+    if [ "$1" == "Bootstrapping" ] || [ "$1" == "PreparingBlock0" ] || [ "$1" == "PreparingStorage" ]; then
         return 0
     else
         return 1
