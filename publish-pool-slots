@@ -20,8 +20,8 @@ usage: $(basename $0) [-i INTERVAL] [-e ENCLAVE] [-d] [-C] [-S] [-E]
   -E  Do not report block creation events.
   -a  Bot access token. If not specified then environment variable with name \`TELEGRAM_BOT_AUTH_TOKEN\`
       will be used for authentication. If none specified then telegram output will not be used.
-  -c  Telegram channel to which send messages. E.g. \`@CardanoNodesHeartbeat\`. If not specified then
-      the environment variable \`TELEGRAM_CHANNEL_ID\` will be used.
+  -c  Telegram channel to which send messages. E.g. \`@CardanoNodesHeartbeat\`. You can specify this option
+      several times to send message to several channels.
   -n  Pool name/identifier. You can use the ticker of your pool here.
       If defined it will be the first line of every telegram message.
   -L  Log level. One of the values \`error\`, \`warn\`, \`info\`, \`debug\`, \`trace\`. Only messages with
@@ -38,7 +38,8 @@ EOF
 }
 
 
-CHANNEL_ID="$TELEGRAM_CHANNEL_ID"
+declare -a T_CHANNEL_IDS
+T_CHANNEL_IDS=()
 # Access token for Telegram Bot API
 T_AUTH_TOKEN=$TELEGRAM_BOT_AUTH_TOKEN
 
@@ -60,7 +61,7 @@ do
            fi
            ;;
         a) T_AUTH_TOKEN="$OPTARG" ;;
-        c) T_CHANNEL_ID="$OPTARG" ;;
+        c) T_CHANNEL_IDS[${#T_CHANNEL_IDS[*]}]="$OPTARG" ;;
         L) if ! parseLogLevel $OPTARG; then
                logError 'Wrong value for option `-L`' >&2
                showHelp >&2
@@ -352,10 +353,13 @@ function printNewEpochReport {
 }
 
 function sendToTelegram {
-    if [ -n "$T_AUTH_TOKEN" ] && [ -n "$T_CHANNEL_ID" ]; then
+    if [ -n "$T_AUTH_TOKEN" ] && (( ${#T_CHANNEL_IDS[*]} > 0 )); then
         local INPUT=$(cat)
         if [ -n "$INPUT" ]; then
-            echo -e "${POOL_NAME:+${POOL_NAME}\n\n}${INPUT}" | postHtmlToTelegram "$T_AUTH_TOKEN" "$T_CHANNEL_ID"
+            for channel in "${T_CHANNEL_IDS[@]}"
+            do
+                echo -e "${POOL_NAME:+${POOL_NAME}\n\n}${INPUT}" | postHtmlToTelegram "$T_AUTH_TOKEN" "$channel"
+            done
         fi
     fi
 }
@@ -369,7 +373,7 @@ function makeNewEpochReport {
         SCHEDULED_AT_TIME_ARR=( $(echo -n $epochLeadersLogsJson | getScheduledTimes) )
         SCHEDULED_AT_DATE_ARR=( $(echo -n $epochLeadersLogsJson | getScheduledDates) )
         printNewEpochReport "no"
-        if [ -n "$T_AUTH_TOKEN" ] && [ -n "$T_CHANNEL_ID" ]; then
+        if [ -n "$T_AUTH_TOKEN" ] && (( ${#T_CHANNEL_IDS[*]} > 0 )); then
             printNewEpochReport "yes" | sendToTelegram
         fi
         LAST_REPORTED_EPOCH=$CURRENT_EPOCH
