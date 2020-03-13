@@ -4,16 +4,17 @@
 
 function showHelp() {
     cat <<EOF
-usage: $(basename $0) -p POOL_ID [-n HEADER] [-r INTERVAL] [-a TELEGRAM_ACCESS_TOKEN] [-c CHANNEL_ID]
-          [-d] [-L LOG_LEVEL] [-j] [-h]
+usage: $(basename $0) -p POOL_ID [-i INTERVAL] [-d] [-a TELEGRAM_ACCESS_TOKEN] [-c CHANNEL_ID] [-n HEADER]
+          [-L LOG_LEVEL] [-j] [-h]
   -p  Pool id. Mandatory parameter.
-  -n  Pool name/identifier. You can use the ticker of your pool here.
-  -r  Report inteval. If not specified then send info only once and exit.
+  -i  Cheching interval. If not specified then send info only once and exit.
   -d  Publish only in the case of changes. Do not publish state at the moment of start\.
   -a  Bot access token. If not specified then environment variable with name \`TELEGRAM_BOT_AUTH_TOKEN\`
       will be used for authentication. If none specified then telegram output will not be used.
   -c  Telegram channel to which send messages. E.g. \`@CardanoNodesHeartbeat\`. If not specified then
       the environment variable \`TELEGRAM_CHANNEL_ID\` will be used.
+  -n  Pool name/identifier. You can use the ticker of your pool here.
+      If defined it will be the first line of every telegram message.
   -L  Log level. One of the values \`error\`, \`warn\`, \`info\`, \`debug\`, \`trace\`. Only messages with
       this and stronger severity level will be logged.
   -j  Prepare messages for journald severity levels.
@@ -32,12 +33,12 @@ CHANNEL_ID="$TELEGRAM_CHANNEL_ID"
 # Access token for Telegram Bot API
 T_AUTH_TOKEN=$TELEGRAM_BOT_AUTH_TOKEN
 
-while getopts 'p:n:r:a:c:L:jdh' c
+while getopts 'p:n:i:a:c:L:jdh' c
 do
     case $c in
         p) POOL_ID="$OPTARG" ;;
         n) POOL_NAME="$OPTARG" ;;
-        r) REPORT_INTERVAL=$(printf "%s" $OPTARG | parseInterval)
+        i) REPORT_INTERVAL=$(printf "%s" $OPTARG | parseInterval)
            if [ -z $REPORT_INTERVAL ] || (( REPORT_INTERVAL < 0 )); then
                logError 'Wrong value for option `-r`' >&2
                showHelp >&2;
