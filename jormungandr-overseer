@@ -80,6 +80,8 @@ CRITICAL_BOOTSTRAP_DURATION=$DEFAULT_CRITICAL_BOOTSTRAP_DURATION_IN_SEC
 CRITICAL_REST_ERROR_DURATION=$DEFAULT_CRITICAL_REST_ERROR_DURATION_IN_SEC
 declare -a T_CHANNEL_IDS
 T_CHANNEL_IDS=()
+declare -a T_ALERT_CHANNEL_IDS
+T_ALERT_CHANNEL_IDS=()
 T_AUTH_TOKEN=$TELEGRAM_BOT_AUTH_TOKEN
 T_MESSAGE_HEADER=
 
@@ -87,7 +89,7 @@ T_MESSAGE_HEADER=
 function showHelp {
     cat <<EOF
 usage: $(basename $0) [-i INTERVAL] [-r INTERVAL] [-l INTERVAL] [-w INTERVAL] [-b INTERVAL] [-t INTERVAL]
-         [-a TELEGRAM_ACCESS_TOKEN] [-c CHANNEL_ID] [-n HEADER] [-L LOG_LEVEL]  [-j] [-h]
+         [-a TELEGRAM_ACCESS_TOKEN] [-c CHANNEL_ID] [-C ALERT_CHANNEL_ID] [-n HEADER] [-L LOG_LEVEL]  [-j] [-h]
   -i  The frequency at which jormungandr health checks will occure.
       If not specified then $(printInterval $DEFAULT_CHECK_INTERVAL_IN_SEC no) interval will be used.
   -r  Report inteval. If not specified then default value of $(printInterval $DEFAULT_REPORT_INTERVAL_IN_SEC no)
@@ -105,6 +107,8 @@ usage: $(basename $0) [-i INTERVAL] [-r INTERVAL] [-l INTERVAL] [-w INTERVAL] [-
       will be used for authentication. If none specified then telegram output will not be used.
   -c  Telegram channel to which publish statistics. E.g. \`@CardanoNodesHeartbeat\`. If none specified then telegram output
       will not be used. You can specify this option several times to send message to several channels.
+  -C  Telegram channel to which publish emergency alerts. If not specified then alert will be logged only.
+      You can specify this option several times to send messages with alerts to several channels.
   -n  Telegram messages header. If defined it will be the first line of every message.
   -L  Log level. One of the values \`error\`, \`warn\`, \`info\`, \`debug\`, \`trace\`. Only messages with this and stronger
       severity level will be logged.
@@ -120,7 +124,7 @@ EOF
 
 
 
-while getopts 'i:l:L:w:b:t:r:a:c:n:jh' c
+while getopts 'i:l:w:b:t:r:a:c:C:n:L:jh' c
 do
     case $c in
         i) CHECK_INTERVAL=$(printf "%s" $OPTARG | parseInterval)
@@ -165,6 +169,10 @@ do
                exit 1
            fi
            ;;
+        a) T_AUTH_TOKEN="$OPTARG" ;;
+        c) T_CHANNEL_IDS[${#T_CHANNEL_IDS[*]}]="$OPTARG" ;;
+        C) T_ALERT_CHANNEL_IDS[${#T_ALERT_CHANNEL_IDS[*]}]="$OPTARG" ;;
+        n) T_MESSAGE_HEADER="$OPTARG" ;;
         L) if ! parseLogLevel $OPTARG; then
                logError 'Wrong value for option `-L`' >&2
                showHelp >&2
@@ -172,9 +180,6 @@ do
            fi
            ;;
         j) WITH_JOURNALD=1;;
-        a) T_AUTH_TOKEN="$OPTARG" ;;
-        c) T_CHANNEL_IDS[${#T_CHANNEL_IDS[*]}]="$OPTARG" ;;
-        n) T_MESSAGE_HEADER="$OPTARG" ;;
         h) showHelp; exit 0 ;;
         ?) showHelp >&2; exit 1;;
     esac
@@ -333,13 +338,32 @@ function readJormungandrState {
 }
 
 function sendToTelegram {
-    if [ -n "$T_AUTH_TOKEN" ] && (( ${#T_CHANNEL_IDS[*]} > 0 )); then
-        local INPUT=$(cat)
-        for channel in "${T_CHANNEL_IDS[@]}"
-        do
-            echo -e "${T_MESSAGE_HEADER:+${T_MESSAGE_HEADER}\n\n}${INPUT}" | postHtmlToTelegram "$T_AUTH_TOKEN" "$channel"
-        done
+    local alert=$1
+    if [ -n "$T_AUTH_TOKEN" ]; then
+        if [ "$alert" == "yes" ]; then
+            if (( ${#T_ALERT_CHANNEL_IDS[*]} > 0 )); then
+                local INPUT=$(cat)
+                for channel in "${T_ALERT_CHANNEL_IDS[@]}"
+                do
+                    echo -e "${T_MESSAGE_HEADER:+${T_MESSAGE_HEADER}\n\n}${INPUT}" | postHtmlToTelegram "$T_AUTH_TOKEN" "$channel"
+                done
+            fi
+        else
+            if (( ${#T_CHANNEL_IDS[*]} > 0 )); then
+                local INPUT=$(cat)
+                for channel in "${T_CHANNEL_IDS[@]}"
+                do
+                    echo -e "${T_MESSAGE_HEADER:+${T_MESSAGE_HEADER}\n\n}${INPUT}" | postHtmlToTelegram "$T_AUTH_TOKEN" "$channel"
+                done
+            fi
+        fi
     fi
+}
+
+function alert {
+    local message=$1
+    logWarn "$message"
+    echo -n "$message" | sendToTelegram "yes"
 }
 
 function logTotal()
@@ -552,12 +576,12 @@ do
             if is_number "$CONNECTIONS"; then
                 logError "Jormungandr is started but not responding or something wrong with our script" >&2
             else
-                logWarn "Starting jormungandr because it looking stopped." >&2
+                logWarn "Starting jormungandr because it looking stopped."
                 stopJormungandr
                 startJormungandr
             fi;
         elif isCriticalLag $CHECK_DATE $PREV_CHECK_DATE $CRITICAL_REST_ERROR_DURATION; then
-            logWarn "Starting jormungandr because it not responding last $(printInterval $CRITICAL_LAG_IN_SEC no)."
+            alert "Starting jormungandr because it not responding last $(printInterval $CRITICAL_LAG_IN_SEC no)."
             stopJormungandr
             startJormungandr
         fi
@@ -576,7 +600,7 @@ do
                 (( LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_COUNT++ ))
             fi
             if isCriticalLag ${LAST_BOOTSTRAP_START:-$CHECK_DATE} $CHECK_DATE $CRITICAL_BOOTSTRAP_DURATION; then
-                logWarn "Restarting node because of bootstrap process took more than $(printInterval $CRITICAL_BOOTSTRAP_DURATION)"
+                alert "Restarting node because of bootstrap process took more than $(printInterval $CRITICAL_BOOTSTRAP_DURATION)"
                 if restartJormungandr; then
                     (( JUST_RESTARTED = 1 ))
                 fi
@@ -594,14 +618,14 @@ do
                 logNotice "Node is running"
             else
                 if isCriticalLag $uptime 0 && isCriticalLag ${lastReceivedBlockTime:-$CHECK_DATE} $lastBlockTime; then
-                    logWarn "Restarting node because of some blocks did not received during $(printInterval $CRITICAL_LAG_IN_SEC no)"
+                    alert "Restarting node because of some blocks did not received during $(printInterval $CRITICAL_LAG_IN_SEC no)"
                     logInfo "Uptime before restart: $uptime seconds ($(printInterval $uptime))"
                     incrementDowntime
                     if restartJormungandr; then
                         (( JUST_RESTARTED = 1 ))
                     fi
                 elif isCriticalLag $CHECK_DATE ${lastReceivedBlockTime:-$CHECK_DATE} $UNBELIVABLE_TIME_WO_BLOCKS_IN_NET; then
-                    logWarn "Restarting node because no one block has been received during last $(printInterval $UNBELIVABLE_TIME_WO_BLOCKS_IN_NET no)"
+                    alert "Restarting node because no one block has been received during last $(printInterval $UNBELIVABLE_TIME_WO_BLOCKS_IN_NET no)"
                     logInfo "Uptime before restart: $uptime seconds ($(printInterval $uptime))"
                     incrementDowntime
                     if restartJormungandr; then
