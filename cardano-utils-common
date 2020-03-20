@@ -177,11 +177,16 @@ function logTrace {
     logDebug "$1" 5
 }
 
+function formatNumber {
+    local VALUE=$1
+    local SCALE=${2:-0}
+    local LANG=en_US.UTF-8; printf "%'.${SCALE}f" $(echo "scale=6; ${VALUE}" | bc -l)
+}
 
 function lovelaces2ada {
     local VALUE=$1
     local SCALE=${2:-2}
-    local LANG=en_US.UTF-8; printf "%'.${SCALE}f" $(echo "scale=6; ${VALUE}/1000000" | bc -l)
+    formatNumber "$(( $VALUE / 1000000 ))" "$SCALE"
 }
 
 function printStake {

@@ -184,12 +184,12 @@ function printBlockSuccess {
 
     local BLOCK_ID=$(echo -n $blockJson | jq -rc '.status.Block.block')
     local SLOT=$(echo -n $blockJson | jq -rc '.scheduled_at_date')
-    local ENCLAVE_LEADER_ID=$(echo -n $blockJson | jq -rc '.enclave_leader_id')
+    local HEIGHT=$(echo -n $blockJson | jq -rc '.status.Block.chain_length + 1')
 
     if [ "$SIMPLE_LOGGING" == "yes" ]; then
-        logNotice "Slot <b><i>$SLOT</i></b> $(qs)SUCCEEDED$(qe): block <a href=\"https://shelleyexplorer.cardano.org/en/block/$BLOCK_ID\">$BLOCK_ID</a> was successfully produced."
+        logNotice "Slot <b><i>$SLOT</i></b> $(qs)SUCCEEDED$(qe): block <a href=\"https://shelleyexplorer.cardano.org/en/block/$BLOCK_ID\">$BLOCK_ID</a> was successfully produced at height <b><i>$HEIGHT</i></b>."
     else
-        logNotice "Slot $SLOT SUCCEEDED: block $BLOCK_ID was successfully produced."
+        logNotice "Slot $SLOT SUCCEEDED: block $BLOCK_ID was successfully produced at height $HEIGHT."
     fi
 }
 
@@ -199,11 +199,12 @@ function printBlockFailFork {
 
     local BLOCK_ID=$(echo -n $blockJson | jq -rc '.status.Block.block')
     local SLOT=$(echo -n $blockJson | jq -rc '.scheduled_at_date')
+    local HEIGHT=$(echo -n $blockJson | jq -rc '.status.Block.chain_length + 1')
 
     if [ "$SIMPLE_LOGGING" == "yes" ]; then
-        logNotice "Slot <b><i>$SLOT</i></b> $(qs)FAILED$(qe): block <a href=\"https://shelleyexplorer.cardano.org/en/block/$BLOCK_ID\">$BLOCK_ID</a> got into a competitive fork that lost."
+        logNotice "Slot <b><i>$SLOT</i></b> $(qs)FAILED$(qe): block <a href=\"https://shelleyexplorer.cardano.org/en/block/$BLOCK_ID\">$BLOCK_ID</a> at height <b><i>$HEIGHT</i></b> got into a competitive fork that lost."
     else
-        logNotice "Slot $SLOT FAILED: block $BLOCK_ID got into a competitive fork that lost."
+        logNotice "Slot $SLOT FAILED: block $BLOCK_ID at height $HEIGHT got into a competitive fork that lost."
     fi
 }
 
@@ -240,7 +241,7 @@ function makeOneCreatedBlockReport {
             printBlockSuccess "yes" "$blockJson" | sendToTelegram
             return 0
         else
-            local blockHeight=$(echo -n "$blockJson" | jq -rc '.status.Block?.chain_length')
+            local blockHeight=$(echo -n "$blockJson" | jq -rc '.status.Block?.chain_length + 1')
             if (( (confirmation_count + blockHeight) < (lastBlockHeight - enough_confirmation_count) )); then
                 # this block in a fork
                 printBlockFailFork "no" "$blockJson"
