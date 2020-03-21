@@ -200,6 +200,7 @@ function postToTelegram {
     if [ -n "$AUTH_TOKEN" ] && [ -n "$CHANNEL_ID" ]; then
         curl --silent \
              --request POST https://api.telegram.org/bot$AUTH_TOKEN/sendMessage \
+             --data disable_web_page_preview=true \
              --data chat_id="$CHANNEL_ID" \
              --data-urlencode text@- \
              > /dev/null
@@ -213,6 +214,7 @@ function postHtmlToTelegram {
         curl --silent \
              --request POST https://api.telegram.org/bot$AUTH_TOKEN/sendMessage \
              --data parse_mode=HTML \
+             --data disable_web_page_preview=true \
              --data chat_id="$CHANNEL_ID" \
              --data-urlencode text@- \
              > /dev/null
