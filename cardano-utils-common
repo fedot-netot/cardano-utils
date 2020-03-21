@@ -281,8 +281,9 @@ function parseExplorerType {
 function getExplorerUrl {
     local idType="${1:-block}" # May be `block`, `pool`
     local id="$2"
+    local explorerType=${3:-$EXPLORER_TYPE}
 
-    if [ "$EXPLORER_TYPE" == "iohk" ]; then
+    if [ "$explorerType" == "iohk" ]; then
         case $idType in
             pool) echo -n "https://shelleyexplorer.cardano.org/en/stake-pool/$id" ;;
             *) echo -n "https://shelleyexplorer.cardano.org/en/block/$id" ;;

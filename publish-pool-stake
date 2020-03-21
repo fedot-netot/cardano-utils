@@ -156,7 +156,7 @@ function sendToTelegram {
         if [ -n "$INPUT" ]; then
             for channel in "${T_CHANNEL_IDS[@]}"
             do
-                echo -e "${POOL_NAME:+${POOL_NAME}\n\n}${INPUT}" | postHtmlToTelegram "$T_AUTH_TOKEN" "$channel"
+                echo -e "${POOL_NAME:+<a href=\"$(getExplorerUrl pool "$POOL_ID" adastat)\">${POOL_NAME}</a>\n\n}${INPUT}" | postHtmlToTelegram "$T_AUTH_TOKEN" "$channel"
             done
         fi
     fi
