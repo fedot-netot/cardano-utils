@@ -240,3 +240,25 @@ function isNotFoundMessage {
         return 1
     fi
 }
+
+function toUpper {
+    if [ -z ${1+x} ]; then
+        tr a-z A-Z
+    else
+        echo -n "$1" | tr a-z A-Z
+    fi
+}
+
+function toLower {
+    if [ -z ${1+x} ]; then
+        tr A-Z a-z
+    else
+        echo -n "$1" | tr A-Z a-z
+    fi
+}
+
+function shortenId {
+    local value="$1"
+    local length="${2:-8}"
+    echo -n "${value:0:$length}...${value:${#value}-$length}"
+}
