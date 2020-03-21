@@ -28,6 +28,7 @@ usage: $(basename $0) [-i INTERVAL] [-e ENCLAVE] [-d] [-C] [-S] [-E] [-F]
       If defined it will be the first line of every telegram message.
   -f  Path to \`blocks.sqlite\` file with blockchain database. Mandatory if competition buttles info needed
       in report.
+  -x  Preffered block explorer when making block and pool links. Must be one of `iohk`, `adastat` (default).
   -L  Log level. One of the values \`error\`, \`warn\`, \`info\`, \`debug\`, \`trace\`. Only messages with
       this and stronger severity level will be logged.
   -j  Prepare messages for journald severity levels.
@@ -46,8 +47,9 @@ declare -a T_CHANNEL_IDS
 T_CHANNEL_IDS=()
 # Access token for Telegram Bot API
 T_AUTH_TOKEN=$TELEGRAM_BOT_AUTH_TOKEN
+EXPLORER=adastat
 
-while getopts 'e:n:i:a:c:f:L:CSEFdjh' c
+while getopts 'e:n:i:a:c:f:L:x:CSEFdjh' c
 do
     case $c in
         e) if ! is_number "$OPTARG"; then
@@ -75,6 +77,12 @@ do
            ;;
         L) if ! parseLogLevel $OPTARG; then
                logError 'Wrong value for option `-L`' >&2
+               showHelp >&2
+               exit 1
+           fi
+           ;;
+        x) if ! parseExplorerType $OPTARG; then
+               logError 'Wrong value for option `-x`' >&2
                showHelp >&2
                exit 1
            fi
@@ -296,7 +304,7 @@ function printCompetitiveButtles {
                 local slot="${SLOTS[$i]}"
                 if [ "$SIMPLE_LOGGING" == "yes" ]; then
                     [ "$oncePassed" == "no" ] && logNotice "\nThere were competitors at the height:"
-                    logNotice "  Pool <a href=\"https://shelleyexplorer.cardano.org/en/stake-pool/$pool_id\">$(shortenId "$pool_id" 4)</a> with slot $([ "$WINNER" == "$block_id" ] && echo -n "<a href=\"https://shelleyexplorer.cardano.org/en/block/$block_id\">")<b><i>$epoch.$slot</i></b>$([ "$WINNER" == "$block_id" ] && echo -n '</a>')"
+                    logNotice "  Pool <a href=\"$(getExplorerUrl pool "$pool_id")\">$(shortenId "$pool_id" 4)</a> with slot $([ "$WINNER" == "$block_id" ] && echo -n "<a href=\"$(getExplorerUrl block "$block_id")\">")<b><i>$epoch.$slot</i></b>$([ "$WINNER" == "$block_id" ] && echo -n '</a>')"
                 else
                     [ "$oncePassed" == "no" ] && logNotice "  There were competitors at height $HEIGHT:"
                     logNotice "    Pool $pool_id with slot $epoch.$slot"$([ "$WINNER" == "$block_id" ] && echo -n " and block $block that won.")
@@ -304,7 +312,6 @@ function printCompetitiveButtles {
                 oncePassed=yes
             fi
         done
-
     fi
 }
 
@@ -317,7 +324,7 @@ function printBlockSuccess {
     local HEIGHT=$(echo -n $blockJson | jq -rc '.status.Block.chain_length + 1')
 
     if [ "$SIMPLE_LOGGING" == "yes" ]; then
-        logNotice "Slot <b><i>$SLOT</i></b> $(qs)SUCCEEDED$(qe): block <a href=\"https://shelleyexplorer.cardano.org/en/block/$BLOCK_ID\">$BLOCK_ID</a> was successfully produced at height <b><i>$HEIGHT</i></b>."
+        logNotice "Slot <b><i>$SLOT</i></b> $(qs)SUCCEEDED$(qe): block <a href=\"$(getExplorerUrl block "$BLOCK_ID")\">$BLOCK_ID</a> was successfully produced at height <b><i>$HEIGHT</i></b>."
         printCompetitiveButtles yes no "$blockJson"
     else
         logNotice "Slot $SLOT SUCCEEDED: block $BLOCK_ID was successfully produced at height $HEIGHT."

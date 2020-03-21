@@ -5,6 +5,7 @@ JORMUNGANDR_RESTAPI_URL=${JORMUNGANDR_RESTAPI_URL:-http://127.0.0.1:$DEFAULT_JOR
 
 WITH_JOURNALD=0
 LOG_LEVEL=3 # 1 - error, 2 - warn, 3 - info, 4 - debug, 5 - trace
+EXPLORER_TYPE=adastat
 
 function is_number {
   if [[ "$1" =~ ^[[:digit:]]+$ ]]; then
@@ -263,4 +264,33 @@ function shortenId {
     local value="$1"
     local length="${2:-8}"
     echo -n "${value:0:$length}...${value:${#value}-$length}"
+}
+
+function parseExplorerType {
+    local type=$1
+    case "$type" in
+        adastat) EXPLORER_TYPE=adastat ;;
+        AdaStat) EXPLORER_TYPE=adastat ;;
+        ADASTAT) EXPLORER_TYPE=adastat ;;
+        iohk) EXPLORER_TYPE=iohk ;;
+        IOHK) EXPLORER_TYPE=iohk ;;
+        *) return 1;;
+    esac
+}
+
+function getExplorerUrl {
+    local idType="${1:-block}" # May be `block`, `pool`
+    local id="$2"
+
+    if [ "$EXPLORER_TYPE" == "iohk" ]; then
+        case $idType in
+            pool) echo -n "https://shelleyexplorer.cardano.org/en/stake-pool/$id" ;;
+            *) echo -n "https://shelleyexplorer.cardano.org/en/block/$id" ;;
+        esac
+    else
+        case $idType in
+            pool) echo -n "https://adastat.net/en/pool/$id" ;;
+            *) echo -n "https://adastat.net/en/block/$id" ;;
+        esac
+    fi
 }
