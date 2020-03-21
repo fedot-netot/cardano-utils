@@ -341,7 +341,7 @@ function printBlockFailFork {
     local HEIGHT=$(echo -n $blockJson | jq -rc '.status.Block.chain_length + 1')
 
     if [ "$SIMPLE_LOGGING" == "yes" ]; then
-        logNotice "Slot <b><i>$SLOT</i></b> $(qs)FAILED$(qe): block <b><i>$BLOCK_ID</i></b> at height <b><i>$HEIGHT</i></b> got into a competitive fork that lost."
+        logNotice "Slot <b><i>$SLOT</i></b> $(qs)FAILED$(qe): block <a href=\"$(getExplorerUrl block "$BLOCK_ID")\">$BLOCK_ID</a> at height <b><i>$HEIGHT</i></b> got into a competitive fork that lost."
         printCompetitiveButtles yes yes "$blockJson"
     else
         logNotice "Slot $SLOT FAILED: block $BLOCK_ID at height $HEIGHT got into a competitive fork that lost."
