@@ -304,7 +304,7 @@ function printCompetitiveButtles {
                 local slot="${SLOTS[$i]}"
                 if [ "$SIMPLE_LOGGING" == "yes" ]; then
                     [ "$oncePassed" == "no" ] && logNotice "\nThere were competitors at the height:"
-                    logNotice "  Pool <a href=\"$(getExplorerUrl pool "$pool_id")\">$(shortenId "$pool_id" 4)</a> with slot $([ "$WINNER" == "$block_id" ] && echo -n "<a href=\"$(getExplorerUrl block "$block_id")\">")<b><i>$epoch.$slot</i></b>$([ "$WINNER" == "$block_id" ] && echo -n '</a>')"
+                    logNotice "&#x2022; Pool <a href=\"$(getExplorerUrl pool "$pool_id")\">$(shortenId "$pool_id" 4)</a> with slot $([ "$WINNER" == "$block_id" ] && echo -n "<a href=\"$(getExplorerUrl block "$block_id")\">")<b><i>$epoch.$slot</i></b>$([ "$WINNER" == "$block_id" ] && echo -n '</a>')"
                 else
                     [ "$oncePassed" == "no" ] && logNotice "  There were competitors at height $HEIGHT:"
                     logNotice "    Pool $pool_id with slot $epoch.$slot"$([ "$WINNER" == "$block_id" ] && echo -n " and block $block that won.")
@@ -459,12 +459,12 @@ function printNewEpochReport {
                     fi
                 fi
                 if [ -z "$WO_SCHEDULE_TIMES" ] && (( ${#SCHEDULED_AT_TIME_ARR[*]} > 0 )); then
-                    logNotice "Slots schedule:"
+                    logNotice "Slots schedule (time in UTC):"
                     for idx in ${!SCHEDULED_AT_TIME_ARR[*]}
                     do
                         local time_item="${SCHEDULED_AT_TIME_ARR[$idx]}"
                         local slot_item="${SCHEDULED_AT_DATE_ARR[$idx]}"
-                        logNotice "  <i>$(date '+%Y-%m-%d ' -u -d"@$time_item")<b><u>$(date '+%H:%M:%S' -u -d"@$time_item")</u></b> UTC</i> / $(qs)$slot_item$(qe)"
+                        logNotice "&#x2022; <i>$(date '+%Y-%m-%d ' -u -d"@$time_item")<b><u>$(date '+%H:%M:%S' -u -d"@$time_item")</u></b></i> / $(qs)$slot_item$(qe)"
                     done
                 fi
             fi
