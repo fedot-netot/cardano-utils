@@ -225,15 +225,15 @@ function postHtmlToTelegram {
 
 function catch()
 {
-    local ___EVALX_CMD_SDTOUT_VAR=$1
-    local ___EVALX_CMD_SDTERR_VAR=$2
+    local -n STDOUT=$1
+    local -n STDERR=$2
 
     logTrace "${@:3}" >&2
 
     eval "$( ( eval ${@:3} ) 2> >(___EVALX_STDERR=$(cat);declare -p ___EVALX_STDERR) 1> >(___EVALX_STDOUT=$(cat);declare -p ___EVALX_STDOUT))"
     
-    eval $___EVALX_CMD_SDTOUT_VAR="'$___EVALX_STDOUT'"
-    eval $___EVALX_CMD_SDTERR_VAR="'$___EVALX_STDERR'"
+    STDOUT="$___EVALX_STDOUT"
+    STDERR="$___EVALX_STDERR"
 }
 
 function isNotFoundMessage {
@@ -241,22 +241,6 @@ function isNotFoundMessage {
         return 0
     else
         return 1
-    fi
-}
-
-function toUpper {
-    if [ -z ${1+x} ]; then
-        tr a-z A-Z
-    else
-        echo -n "$1" | tr a-z A-Z
-    fi
-}
-
-function toLower {
-    if [ -z ${1+x} ]; then
-        tr A-Z a-z
-    else
-        echo -n "$1" | tr A-Z a-z
     fi
 }
 

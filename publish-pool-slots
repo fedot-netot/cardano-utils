@@ -43,8 +43,7 @@ EOF
 }
 
 
-declare -a T_CHANNEL_IDS
-T_CHANNEL_IDS=()
+declare -a T_CHANNEL_IDS=()
 # Access token for Telegram Bot API
 T_AUTH_TOKEN=$TELEGRAM_BOT_AUTH_TOKEN
 EXPLORER=adastat
@@ -260,10 +259,10 @@ order by epoch, slot, pool
     local idx=0
     for record in $(echo "$sql1" | sqlite3 $dbFile -list)
     do
-        local block=$(echo -n $record | cut -d'|' -f1 | toLower)
+        local -l block=$(echo -n $record | cut -d'|' -f1)
         local epoch=$(echo -n $record | cut -d'|' -f2)
         local slot=$(echo -n $record | cut -d'|' -f3)
-        local pool=$(echo -n $record | cut -d'|' -f4 | toLower)
+        local -l pool=$(echo -n $record | cut -d'|' -f4)
         [ -n "$___BLOCK_IDS" ] && eval "$___BLOCK_IDS[$idx]='$block'"
         [ -n "$___POOL_IDS" ] && eval "$___POOL_IDS[$idx]='$pool'"
         [ -n "$___EPOCHS" ] && eval "$___EPOCHS[$idx]='$epoch'"
@@ -297,7 +296,7 @@ function printCompetitiveButtles {
         local oncePassed=no
         for i in "${!BLOCK_IDS[@]}"
         do
-            if [ "${BLOCK_IDS[$i]}" != "$(toLower "$BLOCK_ID")" ]; then
+            if [ "${BLOCK_IDS[$i]}" != "${BLOCK_ID,,}" ]; then
                 local block_id="${BLOCK_IDS[$i]}"
                 local pool_id="${POOL_IDS[$i]}"
                 local epoch="${EPOCHS[$i]}"
