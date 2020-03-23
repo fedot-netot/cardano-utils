@@ -5,7 +5,7 @@
 
 function showHelp() {
     cat <<EOF
-usage: $(basename $0) [-i INTERVAL] [-e ENCLAVE] [-d] [-C] [-S] [-E] [-F]
+usage: $(basename $0) [-i INTERVAL] [-e ENCLAVE] [-d] [-C] [-S] [-E] [-F] [-b SLOT]
           [-a TELEGRAM_ACCESS_TOKEN] [-c CHANNEL_ID] [-n HEADER] [-f FILE]
           [-L LOG_LEVEL] [-j] [-h]
   -i  Interval that will be used for regular checking.
@@ -18,6 +18,7 @@ usage: $(basename $0) [-i INTERVAL] [-e ENCLAVE] [-d] [-C] [-S] [-E] [-F]
   -C  Do not report count of slots for an epoch.
   -S  Do not include into the report the slots schedule.
   -E  Do not report block creation events.
+  -b  Make block creation report for the slot spesified in this parameter in format \`EPOCH.SLOT\`.
   -F  Do not report block creation competition buttles info. This option is assumed when path to
       \`blocks.sqlite\` is not defined (option \`-f\` is not defined).
   -a  Bot access token. If not specified then environment variable with name \`TELEGRAM_BOT_AUTH_TOKEN\`
@@ -48,7 +49,7 @@ declare -a T_CHANNEL_IDS=()
 T_AUTH_TOKEN=$TELEGRAM_BOT_AUTH_TOKEN
 EXPLORER=adastat
 
-while getopts 'e:n:i:a:c:f:L:x:CSEFdjh' c
+while getopts 'e:n:i:a:c:f:L:x:b:CSEFdjh' c
 do
     case $c in
         e) if ! is_number "$OPTARG"; then
@@ -91,11 +92,27 @@ do
         C) WO_SLOTS_COUNT=1;;
         S) WO_SCHEDULE_TIMES=1;;
         E) WO_BLOCK_CREATION_EVENTS=1;;
+        b) THIS_SLOT_ONLY=$OPTARG;;
         F) WO_BLOCK_CREATION_COMPETITION=1;;
         h) showHelp; exit 0 ;;
         ?) showHelp >&2; exit 1;;
     esac
 done
+
+if [ -n "$THIS_SLOT_ONLY" ] && \
+       ( [ -n "$WO_BLOCK_CREATION_EVENTS" ] \
+             || [ -n "$INTERVAL" ] \
+             || [ -n "$WO_SCHEDULE_TIMES" ] \
+             || [ -n "$WO_BLOCK_CREATION_COMPETITION" ] \
+             || [ -n "$ONLY_CHANGES" ] \
+       ); then
+    logError 'Optopn `-b` is mutually exclusive with options `-i`, `-E`, `-S`, `-F`' >&2
+    exitOnError=yes
+fi
+if [ -n "$exitOnError" ]; then
+    showHelp >&2
+    exit 1
+fi
 
 if [ -z "$DB_FILE_NAME" ]; then
     WO_BLOCK_CREATION_COMPETITION=1
@@ -544,6 +561,34 @@ function doOnce {
         logError "Cannot get current epoch number" >&2
     fi
 }
+
+function reportOneBlock {
+    local -r SLOT="$1"
+
+    local -r epoch=$(echo -n "$SLOT" | cut -d. -f1)
+    local -r slot=$(echo -n "$SLOT" | cut -d. -f2)
+    if [ -z "$epoch" ] || [ -z "$slot" ]; then
+        logError 'Wrong value for option `-b`' >&2
+        showHelp >&2
+        exit 1
+    fi
+
+    local nodeStatsJson=$(fetchNodeStats)
+    if [ -z "$nodeStatsJson" ]; then
+        logError "Cannot get node status report"
+        exit 1
+    fi
+    local -r leadersLogsJson=$(fetchLeadersLogs | jq '[ .[] | select(.scheduled_at_date == "'"$SLOT"'") ]')
+    if [ -z "$leadersLogsJson" ]; then
+        logWarn "Cannot find info for slot $THIS_SLOT_ONLY"
+    else
+        makeCreatedBlocksReports "$nodeStatsJson" "$leadersLogsJson"
+    fi
+}
+
+if [ -n "$THIS_SLOT_ONLY" ]; then
+    reportOneBlock "$THIS_SLOT_ONLY" && exit 0 || exit 2
+fi
 
 
 doOnce
