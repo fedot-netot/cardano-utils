@@ -372,7 +372,7 @@ function printBlockFail {
     local SLOT=$(echo -n $blockJson | jq -rc '.scheduled_at_date')
     local REASON=$(echo -n $blockJson | jq -rc '..|.reason?|select(length > 0)')
 
-    local DEFAULT_REASON="ufortunately the attempt to create a block failed"
+    local DEFAULT_REASON="unfortunately the attempt to create a block failed"
 
     if [ "$SIMPLE_LOGGING" == "yes" ]; then
         logNotice "Slot <b><i>$SLOT</i></b> $(qs)FAILED$(qe): $(if [ -n "$REASON" ];then echo "$REASON"; else echo "$DEFAULT_REASON"; fi)."
