@@ -6,7 +6,7 @@ PLATFORM='Free cardano pool utils'
 
 function showHelp() {
     cat <<EOF
-usage: $(basename $0) [-i INTERVAL] [-p POOLID] [-u USERID] [-g GENESISPREF] [-e ENCLAVE] [-C] [-T] [-B]
+usage: $(basename $0) [-i INTERVAL] [-p POOLID] [-u USERID] [-g GENESISPREF] [-e ENCLAVE] [-D] [-C] [-T] [-B]
       [-L LOG_LEVEL] [-j] [-h]
   -i  Interval that will be used for regular checking.
       If not specified then send info only once and exit.
@@ -17,6 +17,8 @@ usage: $(basename $0) [-i INTERVAL] [-p POOLID] [-u USERID] [-g GENESISPREF] [-e
   -e  Enclave leader id. It is integer number. It is helpfull if node carries leadership of several pools.
       If specified then only slots of this enclave leader will be counted. If not specified then all slots
       will be counted regardles of which enclave it belongs to.
+  -D  By default count of slots reported only on epoch change or by \`-c\` option.
+      Use this option if you want to report count of slots just on program start.
   -C  Do not report count of slots for an epoch.
   -T  Do not report current tip of the node blockchain.
   -B  When reporting tip do not report internal block fields. This will reduce the load on the node.
@@ -36,7 +38,7 @@ EOF
 
 POOLTOOL_USER_ID=$POOLTOOL_API_KEY
 
-while getopts 'i:p:u:g:e:c:L:CTBjh' c
+while getopts 'i:p:u:g:e:c:DL:CTBjh' c
 do
     case $c in
         i) INTERVAL=$(printf "%s" $OPTARG | parseInterval)
@@ -55,6 +57,7 @@ do
                exit 1
            fi
            ENCLAVE_LEADER_ID="$OPTARG" ;;
+        D) WITH_SLOTS_COUNT_REPORT_ON_START=1;;
         c) if ! is_number "$OPTARG"; then
                logError 'Wrong value for option `-c`' >&2
                showHelp >&2
@@ -255,24 +258,36 @@ function doOnce {
             sendSlotsCountToPooltool $epoch $MANUAL_SLOTS_COUNT
             exit 0
         elif [ -z "$WO_SLOTS_COUNT_REPORT" ] ; then
-            if [ -n "$LAST_REPORTED_EPOCH" ]; then
-                if (( $epoch > $LAST_REPORTED_EPOCH )); then
-                    sleep 11 # After epoch change wait a little to not overload pooltool service as everybody will proceed this time
+            if [ -n "$LAST_REPORTED_EPOCH" ] || [ -n "$WITH_SLOTS_COUNT_REPORT_ON_START" ]; then
+                if (( $epoch > ${LAST_REPORTED_EPOCH:-0} )); then
                     local currentTime=$(date +%s)
                     if (( $currentTime > (${LAST_SLOTS_COUNT_REPORT_TRY_TIME:-0} + 300) )); # Try not more than once every 5 minutes
                     then
-                        local slotsCount=$(fetchLeadersLogs | getSlotsCountForEpoch "$epoch")
-                        if is_number $slotsCount; then
+                        local -i tryCount=0
+                        local slotsCount=0
+                        while true
+                        do
+                            (( tryCount++ ))
+                            slotsCount=$(fetchLeadersLogs | getSlotsCountForEpoch "$epoch")
+                            logDebug "fetchLeadersLogs" >&2
                             LAST_SLOTS_COUNT_REPORT_TRY_TIME=$(date +%s)
-                            sendSlotsCountToPooltool $epoch $slotsCount && \
-                                LAST_REPORTED_EPOCH="$epoch"
-                        else
+                            if is_number $slotsCount; then
+                                if (( $slotsCount > 0 )) || (( tryCount >= 6 )); then
+                                    sendSlotsCountToPooltool $epoch $slotsCount \
+                                        && LAST_REPORTED_EPOCH="$epoch" \
+                                        && break
+                                fi
+                            fi
+                            (( tryCount >= 6 )) && break
+                            sleep 10
+                        done
+                        if (( $epoch != ${LAST_REPORTED_EPOCH:-0} )); then
                             logError "Cannot get count of slots" >&2
                         fi
                     fi
                 fi
             else
-                # Report onlly when epoch changed. Do not report the state at start timea as the leaders logs
+                # Report onlly when epoch changed. Do not report the state at start time as the leaders logs
                 # contain all allocated blocks with sure only at the epoch beginning time.
                 LAST_REPORTED_EPOCH=$epoch
             fi
