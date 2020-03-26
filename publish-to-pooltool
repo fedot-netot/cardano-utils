@@ -269,7 +269,6 @@ function doOnce {
                         do
                             (( tryCount++ ))
                             slotsCount=$(fetchLeadersLogs | getSlotsCountForEpoch "$epoch")
-                            logDebug "fetchLeadersLogs" >&2
                             LAST_SLOTS_COUNT_REPORT_TRY_TIME=$(date +%s)
                             if is_number $slotsCount; then
                                 if (( $slotsCount > 0 )) || (( tryCount >= 6 )); then
