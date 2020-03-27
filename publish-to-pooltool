@@ -151,8 +151,16 @@ function fetchLeadersLogs {
     logDebug "${ENCLAVE_JSON}" >&2
     if [ -n "$JSON" ]; then
         echo -n $JSON | \
-            jq "[( .[] | select(${ENCLAVE_JSON}) )]"
+            jq -c "[( .[] | select(${ENCLAVE_JSON}) )]"
     fi
+}
+
+function filterLeadersLogsByEpoch {
+    # STDIN: leaders logs json
+    local EPOCH=$1
+
+    jq -c --arg EPOCH "$EPOCH" \
+       '[ .[] | select(.scheduled_at_date|startswith($EPOCH+".")) ]'
 }
 
 function getSlotsCountForEpoch {
@@ -175,6 +183,59 @@ function sendSlotsCountToPooltool {
                        --arg ASSIGNED "$SLOTS_COUNT" \
                        '{currentepoch: $CURRENTEPOCH, poolid: $POOLID,  genesispref: $GENESISPREF, userid: $USERID, assigned_slots: $ASSIGNED}'
           )
+    logInfo "Sending count of assigned slots to pooltool.io"
+    logInfo "Request payload: $PAYLOAD"
+
+    local RESPONSE=$(echo -n "$PAYLOAD" | curl -sSf \
+                                               -H 'Accept: application/json' \
+                                               -H 'Content-Type:application/json' \
+                                               -X POST --data @- \
+                                               'https://api.pooltool.io/v0/sendlogs')
+    local RESULT_CODE=$?
+    [ -n "$RESPONSE" ] && logInfo "Response: $RESPONSE"
+    return $RESULT_CODE
+}
+
+function getStoreFileForEpoch {
+    local EPOCH=$1
+
+    echo -n "$(dirname $(mktemp -u -t))/publish-to-pooltool.slots.pool-$POOL_ID.epoch-$EPOCH"
+}
+
+function sendSlotsToPoolTool {
+    local -i EPOCH=$1
+    local -i SLOTS_COUNT=$2
+    local slotsJsonForEpoch=$3
+
+    # Remove rather old files. Several just in case we missed to delete some file.
+    rm -f "$(getStoreFileForEpoch $(( $EPOCH - 9 )))"
+    rm -f "$(getStoreFileForEpoch $(( $EPOCH - 8 )))"
+    rm -f "$(getStoreFileForEpoch $(( $EPOCH - 7 )))"
+
+    local previousEpochFileName="$(getStoreFileForEpoch $(( $EPOCH - 1 )))"
+    local thisEpochFileName="$(getStoreFileForEpoch $EPOCH)"
+    local PREVIOUS_EPOCH_SLOTS
+    if [ -f "$previousEpochFileName" ]; then
+        PREVIOUS_EPOCH_SLOTS=$(cat $previousEpochFileName)
+    fi
+    if [ ! -f "$previousEpochFileName" ]; then
+        touch "$thisEpochFileName"
+        chmod 600 "$thisEpochFileName"
+        echo -n "$slotsJsonForEpoch" > "$thisEpochFileName"
+    fi
+
+    local CURRENT_EPOCH_HASH=$(sha256sum < "$thisEpochFileName" | cut -d" " -f1)
+
+    local PAYLOAD=$(jq -n -c \
+                       --arg CURRENTEPOCH "$EPOCH" \
+                       --arg POOLID "$POOL_ID" \
+                       --arg USERID "$POOLTOOL_USER_ID" \
+                       --arg GENESISPREF "$GENESISPREF" \
+                       --arg ASSIGNED "$SLOTS_COUNT" \
+                       --arg HASH "$CURRENT_EPOCH_HASH" \
+                       --arg SLOTS "$PREVIOUS_EPOCH_SLOTS" \
+                       '{currentepoch: $CURRENTEPOCH, poolid: $POOLID,  genesispref: $GENESISPREF, userid: $USERID, assigned_slots: $ASSIGNED'"$([ -n "$CURRENT_EPOCH_HASH" ] && echo -n ', this_epoch_hash: $HASH')""$([ -n "$PREVIOUS_EPOCH_SLOTS" ] && echo -n ', last_epoch_slots: $SLOTS')"'}')
+
     logInfo "Sending count of assigned slots to pooltool.io"
     logInfo "Request payload: $PAYLOAD"
 
@@ -268,11 +329,12 @@ function doOnce {
                         while true
                         do
                             (( tryCount++ ))
-                            slotsCount=$(fetchLeadersLogs | getSlotsCountForEpoch "$epoch")
+                            local leadersLogs=$(fetchLeadersLogs | filterLeadersLogsByEpoch "$epoch")
+                            local -i slotsCount=$(echo -n "$leadersLogs" | jq -r '. | length')
                             LAST_SLOTS_COUNT_REPORT_TRY_TIME=$(date +%s)
                             if is_number $slotsCount; then
                                 if (( $slotsCount > 0 )) || (( tryCount >= 6 )); then
-                                    sendSlotsCountToPooltool $epoch $slotsCount \
+                                    sendSlotsToPoolTool "$epoch" "$slotsCount" "$leadersLogs" \
                                         && LAST_REPORTED_EPOCH="$epoch" \
                                         && break
                                 fi
