@@ -218,7 +218,7 @@ function sendSlotsToPoolTool {
     if [ -f "$previousEpochFileName" ]; then
         PREVIOUS_EPOCH_SLOTS=$(cat $previousEpochFileName)
     fi
-    if [ ! -f "$previousEpochFileName" ]; then
+    if [ ! -f "$thisEpochFileName" ]; then
         touch "$thisEpochFileName"
         chmod 600 "$thisEpochFileName"
         echo -n "$slotsJsonForEpoch" > "$thisEpochFileName"
