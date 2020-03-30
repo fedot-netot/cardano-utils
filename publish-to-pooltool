@@ -119,7 +119,7 @@ LAST_SLOTS_COUNT_REPORT_TRY_TIME=
 
 function fetchNodeStats {
     local JSON ERR_MSG
-    catch JSON ERR_MSG "curl -sSf $JORMUNGANDR_RESTAPI_URL/v0/node/stats"
+    catch JSON ERR_MSG "curl -m 5 -sSf $JORMUNGANDR_RESTAPI_URL/v0/node/stats"
     if [ -n "$ERR_MSG" ]; then
         logError "$ERR_MSG" >&2
         return 1
@@ -143,7 +143,7 @@ function fetchLeadersLogs {
     fi
 
     local JSON ERR_MSG
-    catch JSON ERR_MSG "curl -sSf $JORMUNGANDR_RESTAPI_URL/v0/leaders/logs"
+    catch JSON ERR_MSG "curl -m 5 -sSf $JORMUNGANDR_RESTAPI_URL/v0/leaders/logs"
     if [ -n "$ERR_MSG" ]; then
         logError "$ERR_MSG" >&2
         return 1
@@ -187,6 +187,7 @@ function sendSlotsCountToPooltool {
     logInfo "Request payload: $PAYLOAD"
 
     local RESPONSE=$(echo -n "$PAYLOAD" | curl -sSf \
+                                               -m 10 \
                                                -H 'Accept: application/json' \
                                                -H 'Content-Type:application/json' \
                                                -X POST --data @- \
@@ -240,6 +241,7 @@ function sendSlotsToPoolTool {
     logInfo "Request payload: $PAYLOAD"
 
     local RESPONSE=$(echo -n "$PAYLOAD" | curl -sSf \
+                                               -m 10 \
                                                -H 'Accept: application/json' \
                                                -H 'Content-Type:application/json' \
                                                -X POST --data @- \
@@ -258,7 +260,7 @@ function sendTipToPoolTool {
 
     if [ -n "$lastBlockHeight" ] && [ -n "$lastBlockHash" ]; then
         if [ -z "$WO_BLOCK_FIELDS_REPORT" ]; then
-            local BLOCK=$(curl -sSf "$JORMUNGANDR_RESTAPI_URL/v0/block/$lastBlockHash" | xxd -ps -c9999999999)
+            local BLOCK=$(curl -m 5 -sSf "$JORMUNGANDR_RESTAPI_URL/v0/block/$lastBlockHash" | xxd -ps -c9999999999)
             local BLOCK_RESULT_CODE=$?
         fi
         if [ -n "$BLOCK" ] && (( $BLOCK_RESULT_CODE == 0 )) ; then
@@ -266,7 +268,7 @@ function sendTipToPoolTool {
             local lastParent=${BLOCK:104:64}
             local lastSlot=$((0x${BLOCK:24:8}))
             local lastEpoch=$((0x${BLOCK:16:8}))
-            local RESPONSE=$(curl -sSf -X GET --get \
+            local RESPONSE=$(curl -m 10 -sSf -X GET --get \
                                   --data-urlencode "platform=${PLATFORM}" \
                                   --data-urlencode "jormver=${jormVersion}" \
                                   --data "poolid=${POOL_ID}" \
@@ -281,9 +283,9 @@ function sendTipToPoolTool {
                                   "https://api.pooltool.io/v0/sharemytip"
                   )
             local RESULT_CODE=$?
-            local logMessage="Publish tip request: curl -sSf --get --data-urlencode 'platform=${PLATFORM}' --data-urlencode 'jormver=${jormVersion}' https://api.pooltool.io/v0/sharemytip?poolid=${POOL_ID}&userid=${POOLTOOL_USER_ID}&genesispref=${GENESISPREF}&mytip=${lastBlockHeight}&lasthash=${lastBlockHash}&lastpool=${lastPoolID}&lastparent=${lastParent}&lastslot=${lastSlot}&lastepoch=${lastEpoch}"
+            local logMessage="Publish tip request: curl -m 10 -sSf --get --data-urlencode 'platform=${PLATFORM}' --data-urlencode 'jormver=${jormVersion}' https://api.pooltool.io/v0/sharemytip?poolid=${POOL_ID}&userid=${POOLTOOL_USER_ID}&genesispref=${GENESISPREF}&mytip=${lastBlockHeight}&lasthash=${lastBlockHash}&lastpool=${lastPoolID}&lastparent=${lastParent}&lastslot=${lastSlot}&lastepoch=${lastEpoch}"
         else
-            local RESPONSE=$(curl -sSf -X GET --get \
+            local RESPONSE=$(curl -m 10 -sSf -X GET --get \
                                   --data-urlencode "platform=${PLATFORM}" \
                                   --data-urlencode "jormver=${jormVersion}" \
                                   --data "poolid=${POOL_ID}" \
@@ -294,7 +296,7 @@ function sendTipToPoolTool {
                                   "https://api.pooltool.io/v0/sharemytip"
                   )
             local RESULT_CODE=$?
-            local logMessage="Publish tip request: curl -sSf --get --data-urlencode 'platform=${PLATFORM}' --data-urlencode 'jormver=${jormVersion}' https://api.pooltool.io/v0/sharemytip?poolid=${POOL_ID}&userid=${POOLTOOL_USER_ID}&genesispref=${GENESISPREF}&mytip=${lastBlockHeight}&lasthash=${lastBlockHash}"
+            local logMessage="Publish tip request: curl -m 10 -sSf --get --data-urlencode 'platform=${PLATFORM}' --data-urlencode 'jormver=${jormVersion}' https://api.pooltool.io/v0/sharemytip?poolid=${POOL_ID}&userid=${POOLTOOL_USER_ID}&genesispref=${GENESISPREF}&mytip=${lastBlockHeight}&lasthash=${lastBlockHash}"
         fi
 
         if (( RESULT_CODE != 0 )); then

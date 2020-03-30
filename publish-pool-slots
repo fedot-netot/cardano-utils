@@ -118,7 +118,6 @@ if [ -z "$DB_FILE_NAME" ]; then
     WO_BLOCK_CREATION_COMPETITION=1
 fi
 
-
 readonly ENOUGH_CONFIRMATION_COUNT=10
 
 CURRENT_EPOCH=
@@ -129,7 +128,7 @@ declare -A POSTPONED_BLOCKS
 
 function fetchNodeStats {
     local JSON ERR_MSG
-    catch JSON ERR_MSG "curl -sSf $JORMUNGANDR_RESTAPI_URL/v0/node/stats"
+    catch JSON ERR_MSG "curl -m 5 -sSf $JORMUNGANDR_RESTAPI_URL/v0/node/stats"
     if [ -n "$ERR_MSG" ]; then
         logError "$ERR_MSG" >&2
         return 1
@@ -160,7 +159,7 @@ function fetchLeadersLogs {
     fi
 
     local JSON ERR_MSG
-    catch JSON ERR_MSG "curl -sSf $JORMUNGANDR_RESTAPI_URL/v0/leaders/logs"
+    catch JSON ERR_MSG "curl -m 5 -sSf $JORMUNGANDR_RESTAPI_URL/v0/leaders/logs"
     if [ -n "$ERR_MSG" ]; then
         logError "$ERR_MSG" >&2
         return 1
@@ -225,7 +224,7 @@ function isEnoughConfirmationCount {
 
     local -i confirmation_count
     local ERR_MSG
-    catch confirmation_count ERR_MSG "curl -sSf $JORMUNGANDR_RESTAPI_URL/v0/block/$block/next_id?count=$ENOUGH_CONFIRMATION_COUNT | xxd -p -c32 | wc -l"
+    catch confirmation_count ERR_MSG "curl -m 5 -sSf $JORMUNGANDR_RESTAPI_URL/v0/block/$block/next_id?count=$ENOUGH_CONFIRMATION_COUNT | xxd -p -c32 | wc -l"
     if [ -n "$ERR_MSG" ] && ! isNotFoundMessage "$ERR_MSG"; then
         logError "$ERR_MSG" >&2
     fi
@@ -390,7 +389,7 @@ function makeOneCreatedBlockReport {
     local block=$(echo -n "$blockJson" | jq -rc '.status.Block?.block')
     if [ -n "$block" ] && [ "null" != "$block" ]; then
         local confirmation_count ERR_MSG
-        catch confirmation_count ERR_MSG "curl -sSf $JORMUNGANDR_RESTAPI_URL/v0/block/$block/next_id?count=$ENOUGH_CONFIRMATION_COUNT | xxd -p -c32 | wc -l"
+        catch confirmation_count ERR_MSG "curl -m 5 -sSf $JORMUNGANDR_RESTAPI_URL/v0/block/$block/next_id?count=$ENOUGH_CONFIRMATION_COUNT | xxd -p -c32 | wc -l"
         if [ -n "$ERR_MSG" ] && ! isNotFoundMessage "$ERR_MSG"; then
             logError "$ERR_MSG" >&2
         fi
