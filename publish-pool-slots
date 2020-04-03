@@ -323,7 +323,7 @@ function printCompetitiveButtles {
                     logNotice "&#x2022; Pool <a href=\"$(getExplorerUrl pool "$pool_id")\">$(shortenId "$pool_id" 4)</a> with slot $([ "$WINNER" == "$block_id" ] && echo -n "<a href=\"$(getExplorerUrl block "$block_id")\">")<b><i>$epoch.$slot</i></b>$([ "$WINNER" == "$block_id" ] && echo -n '</a>')"
                 else
                     [ "$oncePassed" == "no" ] && logNotice "  There were competitors at height $HEIGHT:"
-                    local winnerBlockSuffix=$([ "$WINNER" == "$block_id" ] && echo -n " and block $block that won.")
+                    local winnerBlockSuffix=$([ "$WINNER" == "$block_id" ] && echo -n " and block $block_id that won.")
                     logNotice "    Pool $pool_id with slot $epoch.$slot$winnerBlockSuffix"
                 fi
                 oncePassed=yes
