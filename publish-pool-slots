@@ -268,7 +268,7 @@ select hex(bi.hash) as hash
      , substr(hex(b.block),169,64) as pool
   from BlockInfo bi
   join Blocks b on b.hash = bi.hash
- where bi.depth = ${checkHeight}
+ where bi.depth = ${checkHeight} + 1
 )
 order by epoch, slot, pool
     "
@@ -301,7 +301,7 @@ function printCompetitiveButtles {
 
     if [ -z "$WO_BLOCK_CREATION_COMPETITION" ]; then
         local BLOCK_ID=$(echo -n $blockJson | jq -rc '.status.Block.block')
-        local HEIGHT=$(echo -n $blockJson | jq -rc '.status.Block.chain_length + 1')
+        local HEIGHT=$(echo -n $blockJson | jq -rc '.status.Block.chain_length')
 
         local -a BLOCK_IDS=()
         local -a POOL_IDS=()
@@ -338,7 +338,7 @@ function printBlockSuccess {
 
     local BLOCK_ID=$(echo -n $blockJson | jq -rc '.status.Block.block')
     local SLOT=$(echo -n $blockJson | jq -rc '.scheduled_at_date')
-    local HEIGHT=$(echo -n $blockJson | jq -rc '.status.Block.chain_length + 1')
+    local HEIGHT=$(echo -n $blockJson | jq -rc '.status.Block.chain_length')
 
     if [ "$SIMPLE_LOGGING" == "yes" ]; then
         logNotice "Slot <b><i>$SLOT</i></b> $(qs)SUCCEEDED$(qe): block <a href=\"$(getExplorerUrl block "$BLOCK_ID")\">$BLOCK_ID</a> was successfully produced at height <b><i>$HEIGHT</i></b>."
@@ -355,7 +355,7 @@ function printBlockFailFork {
 
     local BLOCK_ID=$(echo -n $blockJson | jq -rc '.status.Block.block')
     local SLOT=$(echo -n $blockJson | jq -rc '.scheduled_at_date')
-    local HEIGHT=$(echo -n $blockJson | jq -rc '.status.Block.chain_length + 1')
+    local HEIGHT=$(echo -n $blockJson | jq -rc '.status.Block.chain_length')
 
     if [ "$SIMPLE_LOGGING" == "yes" ]; then
         logNotice "Slot <b><i>$SLOT</i></b> $(qs)FAILED$(qe): block <a href=\"$(getExplorerUrl block "$BLOCK_ID")\">$BLOCK_ID</a> at height <b><i>$HEIGHT</i></b> got into a competitive fork that lost."
@@ -398,8 +398,8 @@ function makeOneCreatedBlockReport {
             printBlockSuccess "yes" "$blockJson" | sendToTelegram
             return 0
         else
-            local blockHeight=$(echo -n "$blockJson" | jq -rc '.status.Block?.chain_length + 1')
-            if (( (confirmation_count + blockHeight) < (lastBlockHeight - ENOUGH_CONFIRMATION_COUNT) )); then
+            local blockHeight=$(echo -n "$blockJson" | jq -rc '.status.Block?.chain_length')
+            if (( (confirmation_count + blockHeight) <= (lastBlockHeight - ENOUGH_CONFIRMATION_COUNT) )); then
                 # this block in a fork
                 printBlockFailFork "no" "$blockJson"
                 printBlockFailFork "yes" "$blockJson" | sendToTelegram
