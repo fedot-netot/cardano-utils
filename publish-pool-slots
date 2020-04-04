@@ -142,6 +142,12 @@ function getCurrentEpoch {
     jq -r '.lastBlockDate' | cut -d. -f1
 }
 
+function getCurrentSlot {
+    # STDIN: node stats json
+
+    jq -r '.lastBlockDate' | cut -d. -f2
+}
+
 function getLastBlockHeight {
     # STDIN: node stats json
 
@@ -523,18 +529,26 @@ function sendToTelegram {
 }
 
 function makeNewEpochReport {
-    local epochLeadersLogsJson="$1"
+    local nodeStatsJson="$1"
+    local epochLeadersLogsJson="$2"
+
+    local -i epoch=$(echo -n $nodeStatsJson | getCurrentEpoch)
+    local -i slot=$(echo -n $nodeStatsJson | getCurrentSlot)
     local count=$(echo -n $epochLeadersLogsJson | getCountOfSlots)
     if is_number $count; then
-        CURRENT_EPOCH=$epoch
-        CURRENT_EPOCH_BLOCK_COUNT=$count
-        SCHEDULED_AT_TIME_ARR=( $(echo -n $epochLeadersLogsJson | getScheduledTimes) )
-        SCHEDULED_AT_DATE_ARR=( $(echo -n $epochLeadersLogsJson | getScheduledDates) )
-        printNewEpochReport "no"
-        if [ -n "$T_AUTH_TOKEN" ] && (( ${#T_CHANNEL_IDS[*]} > 0 )); then
-            printNewEpochReport "yes" | sendToTelegram
+        # We may be shure that slots schedule is already known to our node
+        # when enough time was elapsed from the epoch start.
+        if (( $slot > 20 )); then
+          CURRENT_EPOCH=$epoch
+          CURRENT_EPOCH_BLOCK_COUNT=$count
+          SCHEDULED_AT_TIME_ARR=( $(echo -n $epochLeadersLogsJson | getScheduledTimes) )
+          SCHEDULED_AT_DATE_ARR=( $(echo -n $epochLeadersLogsJson | getScheduledDates) )
+          printNewEpochReport "no"
+          if [ -n "$T_AUTH_TOKEN" ] && (( ${#T_CHANNEL_IDS[*]} > 0 )); then
+              printNewEpochReport "yes" | sendToTelegram
+          fi
+          LAST_REPORTED_EPOCH=$CURRENT_EPOCH
         fi
-        LAST_REPORTED_EPOCH=$CURRENT_EPOCH
     else
         logError "Cannot get count of the slots for epoch \`${epoch}\`" >&2
     fi
@@ -551,7 +565,7 @@ function doOnce {
         local epochLeadersLogsJson=$(echo -n $leadersLogsJson | getLeadersLogsForEpoch $epoch)
         logTrace "$epochLeadersLogsJson" >&2
 
-        makeNewEpochReport "$epochLeadersLogsJson"
+        makeNewEpochReport "$nodeStatsJson" "$epochLeadersLogsJson"
 
         if [ -z "$WO_BLOCK_CREATION_EVENTS" ]; then
             makeCreatedBlocksReports "$nodeStatsJson" "$leadersLogsJson"
