@@ -534,11 +534,13 @@ function makeNewEpochReport {
 
     local -i epoch=$(echo -n $nodeStatsJson | getCurrentEpoch)
     local -i slot=$(echo -n $nodeStatsJson | getCurrentSlot)
+    local -i uptime=$(echo -n $nodeStatsJson | jq -r '.uptime')
+
     local count=$(echo -n $epochLeadersLogsJson | getCountOfSlots)
     if is_number $count; then
         # We may be shure that slots schedule is already known to our node
-        # when enough time was elapsed from the epoch start.
-        if (( $slot > 20 )); then
+        # when enough time was elapsed from the epoch start or node start.
+        if (( $slot > 20 )) && (( $uptime > 200 )); then
           CURRENT_EPOCH=$epoch
           CURRENT_EPOCH_BLOCK_COUNT=$count
           SCHEDULED_AT_TIME_ARR=( $(echo -n $epochLeadersLogsJson | getScheduledTimes) )
@@ -548,6 +550,8 @@ function makeNewEpochReport {
               printNewEpochReport "yes" | sendToTelegram
           fi
           LAST_REPORTED_EPOCH=$CURRENT_EPOCH
+        elif [ -z "$INTERVAL" ]; then
+          logWarn "The schedule of allocated slots for the epoch may not yet be calculated by the node. Please try later." >&2
         fi
     else
         logError "Cannot get count of the slots for epoch \`${epoch}\`" >&2
