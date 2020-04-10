@@ -10,14 +10,14 @@ JORMUNGANDR_START_CMD=${JORMUNGANDR_START_CMD:-"systemctl start jormungandr.serv
 JORMUNGANDR_STOP_CMD=${JORMUNGANDR_STOP_CMD:-"systemctl stop jormungandr.service"}
 JORMUNGANDR_RESTART_CMD=${JORMUNGANDR_RESTART_CMD:-"systemctl restart jormungandr.service"}
 
-DEFAULT_CHECK_INTERVAL_IN_SEC=10 # 10 seconds
-DEFAULT_CRITICAL_LAG_IN_SEC=200 # 200 seconds
-DEFAULT_UNBELIVABLE_TIME_WO_BLOCKS_IN_NET_IN_SEC=600 # 600 seconds
-DEFAULT_REPORT_INTERVAL_IN_SEC=60*60 # 1 hour
-DEFAULT_CRITICAL_BOOTSTRAP_DURATION_IN_SEC=20*60 # 20 minutes
-DEFAULT_CRITICAL_REST_ERROR_DURATION_IN_SEC=20 # 20 seconds
+readonly DEFAULT_CHECK_INTERVAL_IN_SEC=10 # 10 seconds
+readonly DEFAULT_CRITICAL_LAG_IN_SEC=200 # 200 seconds
+readonly DEFAULT_UNBELIVABLE_TIME_WO_BLOCKS_IN_NET_IN_SEC=600 # 600 seconds
+readonly DEFAULT_REPORT_INTERVAL_IN_SEC=60*60 # 1 hour
+readonly DEFAULT_CRITICAL_BOOTSTRAP_DURATION_IN_SEC=20*60 # 20 minutes
+readonly DEFAULT_CRITICAL_REST_ERROR_DURATION_IN_SEC=20 # 20 seconds
 
-START_TIME=$(date +%s)
+readonly START_TIME=$(date +%s)
 LAST_REPORT_PERIOD_START=$START_TIME
 UPTIME=0
 DOWNTIME=0
@@ -186,8 +186,6 @@ do
 done
 
 
-NOW=$(date +%s)
-
 PREV_state=
 PREV_CHECK_DATE=
 
@@ -196,7 +194,7 @@ lastBlockTime=
 lastReceivedBlockTime=
 uptime=
 LAST_REGISTERED_UPTIME=
-CHECK_DATE=$NOW
+CHECK_DATE=$(date +%s)
 CONNECTIONS=
 
 
@@ -617,14 +615,19 @@ do
             elif ! isRunningState $PREV_state; then
                 logNotice "Node is running"
             else
-                if isCriticalLag $uptime 0 && isCriticalLag ${lastReceivedBlockTime:-$CHECK_DATE} $lastBlockTime; then
+                if isCriticalLag $uptime 0 \
+                        && isCriticalLag ${lastReceivedBlockTime:-$CHECK_DATE} $lastBlockTime \
+                        && isCriticalLag $CHECK_DATE $START_TIME # do not restart just after bootstrap
+                then
                     alert "Restarting node because of some blocks did not received during $(printInterval $CRITICAL_LAG_IN_SEC no)"
                     logInfo "Uptime before restart: $uptime seconds ($(printInterval $uptime))"
                     incrementDowntime
                     if restartJormungandr; then
                         (( JUST_RESTARTED = 1 ))
                     fi
-                elif isCriticalLag $CHECK_DATE ${lastReceivedBlockTime:-$CHECK_DATE} $UNBELIVABLE_TIME_WO_BLOCKS_IN_NET; then
+                elif isCriticalLag $CHECK_DATE ${lastReceivedBlockTime:-$CHECK_DATE} $UNBELIVABLE_TIME_WO_BLOCKS_IN_NET \
+                        && isCriticalLag $CHECK_DATE $START_TIME # do not restart just after bootstrap
+                then
                     alert "Restarting node because no one block has been received during last $(printInterval $UNBELIVABLE_TIME_WO_BLOCKS_IN_NET no)"
                     logInfo "Uptime before restart: $uptime seconds ($(printInterval $uptime))"
                     incrementDowntime
