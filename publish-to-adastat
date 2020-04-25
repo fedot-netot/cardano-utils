@@ -10,7 +10,7 @@ usage: $(basename $0) [-i INTERVAL] [-p POOLID] [-u USERID] [-g GENESISPREF] [-e
   -i  Interval that will be used for regular checking.
       If not specified then send info only once and exit.
   -p  Pool id. This argument is mandatory.
-  -k  Path to file with private key of pool owner. This argument is mandatory.
+  -k  Path to the file with KES private key of the pool. This argument is mandatory.
   -e  Enclave leader id. It is integer number. It is helpfull if node carries leadership of several pools.
       If specified then only slots of this enclave leader will be counted. If not specified then all slots
       will be counted regardles of which enclave it belongs to.
@@ -41,7 +41,7 @@ do
            fi
            ;;
         p) POOL_ID="$OPTARG";;
-        k) POOL_OWNER_PRIVATE_KEY_FILE="$OPTARG";;
+        k) POOL_KES_PRIVATE_KEY_FILE="$OPTARG";;
         e) if ! is_number "$OPTARG"; then
                logError 'Wrong value for option `-e`' >&2
                showHelp >&2
@@ -71,7 +71,7 @@ if [ -z "$POOL_ID" ]; then
     logError 'Option `-p` is mandatory' >&2
     show_help=yes
 fi
-if [ -z "$POOL_OWNER_PRIVATE_KEY_FILE" ]; then
+if [ -z "$POOL_KES_PRIVATE_KEY_FILE" ]; then
     logError 'Option `-k` is mandatory' >&2
     show_help=yes
 fi
@@ -159,7 +159,7 @@ function sendSlotsCountToAdastat {
                        --arg ASSIGNED "$SLOTS_COUNT" \
                        '{pool: $POOLID, epoch: $EPOCH, blocks: $ASSIGNED}'
           )
-    local SIGNATURE=$(echo -n $PAYLOAD | jcli key sign --secret-key $POOL_OWNER_PRIVATE_KEY_FILE)
+    local SIGNATURE=$(echo -n "$PAYLOAD" | jcli key sign --secret-key $POOL_KES_PRIVATE_KEY_FILE)
 
     logInfo "Sending count of assigned slots to adastat.net"
     logInfo "Request payload: $PAYLOAD"
