@@ -1,12 +1,12 @@
 #!/bin/bash
 
-. $(dirname $0)/cardano-utils-common
+. "$(dirname "$0")/cardano-utils-common"
 
 PLATFORM='Free cardano pool utils'
 
 function showHelp() {
     cat <<EOF
-usage: $(basename $0) [-i INTERVAL] [-p POOLID] [-u USERID] [-g GENESISPREF] [-e ENCLAVE] [-D] [-C] [-T] [-B]
+usage: $(basename "$0") [-i INTERVAL] [-p POOLID] [-u USERID] [-g GENESISPREF] [-e ENCLAVE] [-D] [-C] [-T] [-B]
       [-L LOG_LEVEL] [-j] [-h]
   -i  Interval that will be used for regular checking.
       If not specified then send info only once and exit.
@@ -41,8 +41,8 @@ POOLTOOL_USER_ID=$POOLTOOL_API_KEY
 while getopts 'i:p:u:g:e:c:DL:CTBjh' c
 do
     case $c in
-        i) INTERVAL=$(printf "%s" $OPTARG | parseInterval)
-           if [ -z $INTERVAL ] || (( INTERVAL < 0 )); then
+        i) INTERVAL=$(printf "%s" "$OPTARG" | parseInterval)
+           if [ -z "$INTERVAL" ] || (( INTERVAL < 0 )); then
                logError 'Wrong value for option `-r`' >&2
                showHelp >&2
                exit 1
@@ -64,7 +64,7 @@ do
                exit 1
            fi
            MANUAL_SLOTS_COUNT="$OPTARG";;
-        L) if ! parseLogLevel $OPTARG; then
+        L) if ! parseLogLevel "$OPTARG"; then
                logError 'Wrong value for option `-L`' >&2
                showHelp >&2
                exit 1
@@ -111,9 +111,6 @@ if [ -n "$show_help" ]; then
 fi
 
 
-CURRENT_EPOCH=
-CURRENT_EPOCH_BLOCK_COUNT=
-LAST_EPOCH=
 LAST_REPORTED_EPOCH=
 LAST_SLOTS_COUNT_REPORT_TRY_TIME=
 
@@ -139,7 +136,7 @@ function fetchLeadersLogs {
     logDebug "$ENCLAVE_LEADER_ID" >&2
     local ENCLAVE_JSON="true"
     if [ -n "$ENCLAVE_LEADER_ID" ]; then
-        ENCLAVE_JSON=$(printf '.enclave_leader_id==%d' $ENCLAVE_LEADER_ID)
+        ENCLAVE_JSON=$(printf '.enclave_leader_id==%d' "$ENCLAVE_LEADER_ID")
     fi
 
     local JSON ERR_MSG
@@ -150,7 +147,7 @@ function fetchLeadersLogs {
     fi
     logDebug "${ENCLAVE_JSON}" >&2
     if [ -n "$JSON" ]; then
-        echo -n $JSON | \
+        echo -n "$JSON" | \
             jq -c "[( .[] | select(${ENCLAVE_JSON}) )]"
     fi
 }
@@ -200,7 +197,7 @@ function sendSlotsCountToPooltool {
 function getStoreFileForEpoch {
     local EPOCH=$1
 
-    echo -n "$(dirname $(mktemp -u -t))/publish-to-pooltool.slots.pool-$POOL_ID.epoch-$EPOCH"
+    echo -n "$(dirname "$(mktemp -u -t)")/publish-to-pooltool.slots.pool-$POOL_ID.epoch-$EPOCH"
 }
 
 function sendSlotsToPoolTool {
@@ -214,10 +211,10 @@ function sendSlotsToPoolTool {
     rm -f "$(getStoreFileForEpoch $(( $EPOCH - 7 )))"
 
     local previousEpochFileName="$(getStoreFileForEpoch $(( $EPOCH - 1 )))"
-    local thisEpochFileName="$(getStoreFileForEpoch $EPOCH)"
+    local thisEpochFileName="$(getStoreFileForEpoch "$EPOCH")"
     local PREVIOUS_EPOCH_SLOTS
     if [ -f "$previousEpochFileName" ]; then
-        PREVIOUS_EPOCH_SLOTS=$(cat $previousEpochFileName)
+        PREVIOUS_EPOCH_SLOTS=$(cat "$previousEpochFileName")
     fi
     if [ ! -f "$thisEpochFileName" ]; then
         touch "$thisEpochFileName"
@@ -254,9 +251,9 @@ function sendSlotsToPoolTool {
 function sendTipToPoolTool {
     local nodeStatsJson="$1"
 
-    local lastBlockHeight=$(echo -n $nodeStatsJson | jq -cr '.lastBlockHeight')
-    local lastBlockHash=$(echo -n $nodeStatsJson | jq -cr '.lastBlockHash')
-    local jormVersion=$(echo -n $nodeStatsJson | jq -cr '.version')
+    local lastBlockHeight=$(echo -n "$nodeStatsJson" | jq -cr '.lastBlockHeight')
+    local lastBlockHash=$(echo -n "$nodeStatsJson" | jq -cr '.lastBlockHash')
+    local jormVersion=$(echo -n "$nodeStatsJson" | jq -cr '.version')
 
     if [ -n "$lastBlockHeight" ] && [ -n "$lastBlockHash" ]; then
         if [ -z "$WO_BLOCK_FIELDS_REPORT" ]; then
@@ -315,10 +312,10 @@ function doOnce {
     if [ -z "$nodeStatsJson" ]; then
         return 1
     fi
-    local epoch=$(echo -n $nodeStatsJson | getCurrentEpoch)
-    if is_number $epoch; then
+    local epoch=$(echo -n "$nodeStatsJson" | getCurrentEpoch)
+    if is_number "$epoch"; then
         if [ -n "$MANUAL_SLOTS_COUNT" ]; then
-            sendSlotsCountToPooltool $epoch $MANUAL_SLOTS_COUNT
+            sendSlotsCountToPooltool "$epoch" "$MANUAL_SLOTS_COUNT"
             exit 0
         elif [ -z "$WO_SLOTS_COUNT_REPORT" ] ; then
             if [ -n "$LAST_REPORTED_EPOCH" ] || [ -n "$WITH_SLOTS_COUNT_REPORT_ON_START" ]; then
@@ -334,7 +331,7 @@ function doOnce {
                             local leadersLogs=$(fetchLeadersLogs | filterLeadersLogsByEpoch "$epoch")
                             local -i slotsCount=$(echo -n "$leadersLogs" | jq -r '. | length')
                             LAST_SLOTS_COUNT_REPORT_TRY_TIME=$(date +%s)
-                            if is_number $slotsCount; then
+                            if is_number "$slotsCount"; then
                                 if (( $slotsCount > 0 )) || (( tryCount >= 6 )); then
                                     sendSlotsToPoolTool "$epoch" "$slotsCount" "$leadersLogs" \
                                         && LAST_REPORTED_EPOCH="$epoch" \
@@ -355,7 +352,6 @@ function doOnce {
                 LAST_REPORTED_EPOCH=$epoch
             fi
         fi
-        LAST_EPOCH=$epoch
 
         if [ -z "$WO_TIP_REPORT" ]; then
             sendTipToPoolTool "$nodeStatsJson"

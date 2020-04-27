@@ -1,6 +1,6 @@
 #!/bin/bash
 
-. $(dirname $0)/cardano-utils-common
+. "$(dirname "$0")/cardano-utils-common"
 
 trap exit1 TERM
 trap exit1_ INT
@@ -13,8 +13,8 @@ JORMUNGANDR_RESTART_CMD=${JORMUNGANDR_RESTART_CMD:-"systemctl restart jormungand
 readonly DEFAULT_CHECK_INTERVAL_IN_SEC=10 # 10 seconds
 readonly DEFAULT_CRITICAL_LAG_IN_SEC=200 # 200 seconds
 readonly DEFAULT_UNBELIVABLE_TIME_WO_BLOCKS_IN_NET_IN_SEC=600 # 600 seconds
-readonly DEFAULT_REPORT_INTERVAL_IN_SEC=60*60 # 1 hour
-readonly DEFAULT_CRITICAL_BOOTSTRAP_DURATION_IN_SEC=20*60 # 20 minutes
+readonly DEFAULT_REPORT_INTERVAL_IN_SEC=$((60*60)) # 1 hour
+readonly DEFAULT_CRITICAL_BOOTSTRAP_DURATION_IN_SEC=$((20*60)) # 20 minutes
 readonly DEFAULT_CRITICAL_REST_ERROR_DURATION_IN_SEC=20 # 20 seconds
 
 readonly START_TIME=$(date +%s)
@@ -88,7 +88,7 @@ T_MESSAGE_HEADER=
 
 function showHelp {
     cat <<EOF
-usage: $(basename $0) [-i INTERVAL] [-r INTERVAL] [-l INTERVAL] [-w INTERVAL] [-b INTERVAL] [-t INTERVAL]
+usage: $(basename "$0") [-i INTERVAL] [-r INTERVAL] [-l INTERVAL] [-w INTERVAL] [-b INTERVAL] [-t INTERVAL]
          [-a TELEGRAM_ACCESS_TOKEN] [-c CHANNEL_ID] [-C ALERT_CHANNEL_ID] [-n HEADER] [-L LOG_LEVEL]  [-j] [-h]
   -i  The frequency at which jormungandr health checks will occure.
       If not specified then $(printInterval $DEFAULT_CHECK_INTERVAL_IN_SEC no) interval will be used.
@@ -127,43 +127,43 @@ EOF
 while getopts 'i:l:w:b:t:r:a:c:C:n:L:jh' c
 do
     case $c in
-        i) CHECK_INTERVAL=$(printf "%s" $OPTARG | parseInterval)
-           if [ -z $CHECK_INTERVAL ] || (( CHECK_INTERVAL <= 0 )); then
+        i) CHECK_INTERVAL=$(printf "%s" "$OPTARG" | parseInterval)
+           if [ -z "$CHECK_INTERVAL" ] || (( CHECK_INTERVAL <= 0 )); then
                logError 'Wrong value for option `-i`' >&2
                showHelp >&2
                exit 1
            fi
            ;;
-        l) CRITICAL_LAG_IN_SEC=$(printf "%s" $OPTARG | parseInterval)
-           if [ -z $CRITICAL_LAG_IN_SEC ] || (( CRITICAL_LAG_IN_SEC < 0 )); then
+        l) CRITICAL_LAG_IN_SEC=$(printf "%s" "$OPTARG" | parseInterval)
+           if [ -z "$CRITICAL_LAG_IN_SEC" ] || (( CRITICAL_LAG_IN_SEC < 0 )); then
                logError 'Wrong value for option `-l`' >&2
                showHelp >&2
                exit 1
            fi
            ;;
-        w) UNBELIVABLE_TIME_WO_BLOCKS_IN_NET=$(printf "%s" $OPTARG | parseInterval)
-           if [ -z $UNBELIVABLE_TIME_WO_BLOCKS_IN_NET ] || (( UNBELIVABLE_TIME_WO_BLOCKS_IN_NET < 0 )); then
+        w) UNBELIVABLE_TIME_WO_BLOCKS_IN_NET=$(printf "%s" "$OPTARG" | parseInterval)
+           if [ -z "$UNBELIVABLE_TIME_WO_BLOCKS_IN_NET" ] || (( UNBELIVABLE_TIME_WO_BLOCKS_IN_NET < 0 )); then
                logError 'Wrong value for option `-w`' >&2
                showHelp >&2
                exit 1
            fi
            ;;
-        b) CRITICAL_BOOTSTRAP_DURATION=$(printf "%s" $OPTARG | parseInterval)
-           if [ -z $CRITICAL_BOOTSTRAP_DURATION ] || (( CRITICAL_BOOTSTRAP_DURATION < 0 )); then
+        b) CRITICAL_BOOTSTRAP_DURATION=$(printf "%s" "$OPTARG" | parseInterval)
+           if [ -z "$CRITICAL_BOOTSTRAP_DURATION" ] || (( CRITICAL_BOOTSTRAP_DURATION < 0 )); then
                logError 'Wrong value for option `-b`' >&2
                showHelp >&2
                exit 1
            fi
            ;;
-        t) CRITICAL_REST_ERROR_DURATION=$(printf "%s" $OPTARG | parseInterval)
-           if [ -z $CRITICAL_REST_ERROR_DURATION ] || (( CRITICAL_REST_ERROR_DURATION < 0 )); then
+        t) CRITICAL_REST_ERROR_DURATION=$(printf "%s" "$OPTARG" | parseInterval)
+           if [ -z "$CRITICAL_REST_ERROR_DURATION" ] || (( CRITICAL_REST_ERROR_DURATION < 0 )); then
                logError 'Wrong value for option `-t`' >&2
                showHelp >&2
                exit 1
            fi
            ;;
-        r) REPORT_INTERVAL=$(printf "%s" $OPTARG | parseInterval)
-           if [ -z $REPORT_INTERVAL ] || (( REPORT_INTERVAL < 0 )); then
+        r) REPORT_INTERVAL=$(printf "%s" "$OPTARG" | parseInterval)
+           if [ -z "$REPORT_INTERVAL" ] || (( REPORT_INTERVAL < 0 )); then
                logError 'Wrong value for option `-r`' >&2
                showHelp >&2
                exit 1
@@ -173,7 +173,7 @@ do
         c) T_CHANNEL_IDS[${#T_CHANNEL_IDS[*]}]="$OPTARG" ;;
         C) T_ALERT_CHANNEL_IDS[${#T_ALERT_CHANNEL_IDS[*]}]="$OPTARG" ;;
         n) T_MESSAGE_HEADER="$OPTARG" ;;
-        L) if ! parseLogLevel $OPTARG; then
+        L) if ! parseLogLevel "$OPTARG"; then
                logError 'Wrong value for option `-L`' >&2
                showHelp >&2
                exit 1
@@ -203,7 +203,7 @@ function isCriticalLag {
     LAST_TIME=$1
     PREV_TIME=$2
     MAX_LAG=${3:-$CRITICAL_LAG_IN_SEC}
-    if !(is_number $LAST_TIME && is_number $PREV_TIME); then
+    if ! (is_number "$LAST_TIME" && is_number "$PREV_TIME"); then
         logError "Not numeric arguments!!!" >&2
         return 1
     fi
@@ -322,10 +322,10 @@ function readJormungandrState {
         logError "$ERR_MSG" >&2
         return 1
     fi
-    state=$(echo -n $JSON | jq -r .state)
-    if isRunningState $state; then
-        lastBlockTime=$(date +%s -d$( echo -n "$JSON" | jq -r .lastBlockTime 2>/dev/null) 2>/dev/null)
-        lastReceivedBlockTime=$(date +%s -d$( echo -n "$JSON" | jq -r .lastReceivedBlockTime 2>/dev/null) 2>/dev/null)
+    state=$(echo -n "$JSON" | jq -r .state)
+    if isRunningState "$state"; then
+        lastBlockTime=$(date +%s -d"$( echo -n "$JSON" | jq -r .lastBlockTime 2>/dev/null)" 2>/dev/null)
+        lastReceivedBlockTime=$(date +%s -d"$( echo -n "$JSON" | jq -r .lastReceivedBlockTime 2>/dev/null)" 2>/dev/null)
         uptime=$(echo -n "$JSON" | jq -r .uptime 2>/dev/null)
     fi
     if is_number "$uptime"; then
@@ -473,7 +473,7 @@ function logLastPeriod()
             logNotice "Avr/Max last block age: <u><b><i>$(printIntervalShortly $(( LAST_REPORT_PERIOD_TOTAL_LAG3 / LAST_REPORT_PERIOD_TOTAL_LAG3_COUNT )))</i></b></u>/<u><b><i>$(printIntervalShortly $LAST_REPORT_PERIOD_MAX_LAG3)</i></b></u>"
             fi
         else
-            logNotice "Statistics for the last $(printInterval $REPORT_INTERVAL no):"
+            logNotice "Statistics for the last $(printInterval "$REPORT_INTERVAL" no):"
             logNotice "  node was running:            ${uptime_percent}% of time"
             if (( LAST_REPORT_PERIOD_TOTAL_UPTIME_COUNT > 1 )); then
             logNotice "  average uptime duration:     $(printInterval $(( LAST_REPORT_PERIOD_TOTAL_UPTIME_DURATION / LAST_REPORT_PERIOD_TOTAL_UPTIME_COUNT )))"
@@ -578,17 +578,17 @@ do
                 stopJormungandr
                 startJormungandr
             fi;
-        elif isCriticalLag $CHECK_DATE $PREV_CHECK_DATE $CRITICAL_REST_ERROR_DURATION; then
-            alert "Starting jormungandr because it not responding last $(printInterval $CRITICAL_LAG_IN_SEC no)."
+        elif isCriticalLag "$CHECK_DATE" "$PREV_CHECK_DATE" "$CRITICAL_REST_ERROR_DURATION"; then
+            alert "Starting jormungandr because it not responding last $(printInterval "$CRITICAL_LAG_IN_SEC" no)."
             stopJormungandr
             startJormungandr
         fi
     else
-        if isRunningState $PREV_state && ! isRunningState $state; then
+        if isRunningState "$PREV_state" && ! isRunningState "$state"; then
             incrementUptimeDuration
         fi
-        if isBootstrappingState $state; then
-            if ! isBootstrappingState $PREV_state; then
+        if isBootstrappingState "$state"; then
+            if ! isBootstrappingState "$PREV_state"; then
                 if (( just_restarted )); then
                     logInfo "Bootstrapping..."
                 else
@@ -597,39 +597,39 @@ do
                 (( TOTAL_BOOTSTRAP_COUNT++ ))
                 (( LAST_REPORT_PERIOD_TOTAL_BOOTSTRAP_COUNT++ ))
             fi
-            if isCriticalLag ${LAST_BOOTSTRAP_START:-$CHECK_DATE} $CHECK_DATE $CRITICAL_BOOTSTRAP_DURATION; then
-                alert "Restarting node because of bootstrap process took more than $(printInterval $CRITICAL_BOOTSTRAP_DURATION)"
+            if isCriticalLag "${LAST_BOOTSTRAP_START:-$CHECK_DATE}" "$CHECK_DATE" "$CRITICAL_BOOTSTRAP_DURATION"; then
+                alert "Restarting node because of bootstrap process took more than $(printInterval "$CRITICAL_BOOTSTRAP_DURATION")"
                 if restartJormungandr; then
                     (( JUST_RESTARTED = 1 ))
                 fi
             fi
             incrementBootstrapDuration
             incrementDowntime
-        elif isRunningState $state; then
+        elif isRunningState "$state"; then
             unset LAST_BOOTSTRAP_START
             incrementConnectionStatistic
             incrementLagStatistic
-            if isBootstrappingState $PREV_state; then
+            if isBootstrappingState "$PREV_state"; then
                 incrementBootstrapDuration
-                logNotice "Node bootstrapped in $LAST_BOOTSTRAP_DURATION seconds ($(printInterval $LAST_BOOTSTRAP_DURATION))"
-            elif ! isRunningState $PREV_state; then
+                logNotice "Node bootstrapped in $LAST_BOOTSTRAP_DURATION seconds ($(printInterval "$LAST_BOOTSTRAP_DURATION"))"
+            elif ! isRunningState "$PREV_state"; then
                 logNotice "Node is running"
             else
-                if isCriticalLag $uptime 0 \
-                        && isCriticalLag ${lastReceivedBlockTime:-$CHECK_DATE} $lastBlockTime \
-                        && isCriticalLag $CHECK_DATE $START_TIME # do not restart just after bootstrap
+                if isCriticalLag "$uptime" 0 \
+                        && isCriticalLag "${lastReceivedBlockTime:-$CHECK_DATE}" "$lastBlockTime" \
+                        && isCriticalLag "$CHECK_DATE" "$START_TIME" # do not restart just after bootstrap
                 then
-                    alert "Restarting node because of some blocks did not received during $(printInterval $CRITICAL_LAG_IN_SEC no)"
-                    logInfo "Uptime before restart: $uptime seconds ($(printInterval $uptime))"
+                    alert "Restarting node because of some blocks did not received during $(printInterval "$CRITICAL_LAG_IN_SEC" no)"
+                    logInfo "Uptime before restart: $uptime seconds ($(printInterval "$uptime"))"
                     incrementDowntime
                     if restartJormungandr; then
                         (( JUST_RESTARTED = 1 ))
                     fi
-                elif isCriticalLag $CHECK_DATE ${lastReceivedBlockTime:-$CHECK_DATE} $UNBELIVABLE_TIME_WO_BLOCKS_IN_NET \
-                        && isCriticalLag $CHECK_DATE $START_TIME # do not restart just after bootstrap
+                elif isCriticalLag "$CHECK_DATE" "${lastReceivedBlockTime:-$CHECK_DATE}" "$UNBELIVABLE_TIME_WO_BLOCKS_IN_NET" \
+                        && isCriticalLag "$CHECK_DATE" "$START_TIME" # do not restart just after bootstrap
                 then
-                    alert "Restarting node because no one block has been received during last $(printInterval $UNBELIVABLE_TIME_WO_BLOCKS_IN_NET no)"
-                    logInfo "Uptime before restart: $uptime seconds ($(printInterval $uptime))"
+                    alert "Restarting node because no one block has been received during last $(printInterval "$UNBELIVABLE_TIME_WO_BLOCKS_IN_NET" no)"
+                    logInfo "Uptime before restart: $uptime seconds ($(printInterval "$uptime"))"
                     incrementDowntime
                     if restartJormungandr; then
                         (( JUST_RESTARTED = 1 ))
@@ -644,7 +644,7 @@ do
         fi
     fi
 
-    if isRunningState $state || isBootstrappingState $state; then
+    if isRunningState "$state" || isBootstrappingState "$state"; then
         PREV_CHECK_DATE=$CHECK_DATE
     fi
     if [ -n "$state" ]; then

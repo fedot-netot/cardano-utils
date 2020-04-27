@@ -1,4 +1,4 @@
-# -*- mode: shell-script -*-
+#!/bin/bash
 
 DEFAULT_JORMUNGANDR_REST_API_PORT=3001
 JORMUNGANDR_RESTAPI_URL=${JORMUNGANDR_RESTAPI_URL:-http://127.0.0.1:$DEFAULT_JORMUNGANDR_REST_API_PORT/api}
@@ -18,9 +18,9 @@ function is_number {
 function parseInterval {
     local interval=$(cat)
     local result
-    if is_number $interval; then
+    if is_number "$interval"; then
         (( result = interval ))
-    elif is_number ${interval: : -1}; then
+    elif is_number "${interval: : -1}"; then
         local value=${interval: : -1}
         local unit=${interval: $(( ${#interval} -1 ))  : 1}
         case $unit in
@@ -42,19 +42,19 @@ function parseInterval {
 function printInterval {
     local T=$1
     local always_show_seconds=${2:-"no"}
-    if ! is_number $T; then
+    if ! is_number "$T"; then
         return 1
     fi
     if (( T < 0 )); then
         (( T = -T ))
-        local sign = "minus "
+        local sign="minus "
     fi
     local D=$((T/60/60/24))
     local H=$((T/60/60%24))
     local M=$((T/60%60))
     local S=$((T%60))
 
-    printf '%s' $sign
+    printf '%s' "$sign"
     if (( D > 0 )); then
         printf '%d day' $D
         (( D > 1 )) && printf 's'
@@ -78,18 +78,18 @@ function printInterval {
 
 function printIntervalShortly {
     local T=$1
-    if ! is_number $T; then
+    if ! is_number "$T"; then
         return 1
     fi
     if (( T < 0 )); then
         (( T = -T ))
-        local sign = "- "
+        local sign="- "
     fi
     local D=$((T/60/60/24))
     local H=$((T/60/60%24))
     local M=$((T/60%60))
     local S=$((T%60))
-    printf "%s" $sign
+    printf "%s" "$sign"
     (( D > 0 )) && printf '%dd' $D
     if (( H > 0 )); then
         (( D > 0 )) && printf ' '
@@ -181,7 +181,7 @@ function logTrace {
 function formatNumber {
     local VALUE=$1
     local SCALE=${2:-0}
-    local LANG=en_US.UTF-8; printf "%'.${SCALE}f" $(echo "scale=6; ${VALUE}" | bc -l)
+    local LANG=en_US.UTF-8; printf "%'.${SCALE}f" "$(echo "scale=6; ${VALUE}" | bc -l)"
 }
 
 function lovelaces2ada {
@@ -192,7 +192,7 @@ function lovelaces2ada {
 
 function printStake {
     local LOVELACES=$1
-    echo $(lovelaces2ada $LOVELACES) ADA
+    echo "$(lovelaces2ada "$LOVELACES") ADA"
 }
 
 function postToTelegram {
@@ -201,7 +201,7 @@ function postToTelegram {
     if [ -n "$AUTH_TOKEN" ] && [ -n "$CHANNEL_ID" ]; then
         curl --silent \
              --max-time 30 \
-             --request POST https://api.telegram.org/bot$AUTH_TOKEN/sendMessage \
+             --request POST "https://api.telegram.org/bot${AUTH_TOKEN}/sendMessage" \
              --data disable_web_page_preview=true \
              --data chat_id="$CHANNEL_ID" \
              --data-urlencode text@- \
@@ -215,7 +215,7 @@ function postHtmlToTelegram {
     if [ -n "$AUTH_TOKEN" ] && [ -n "$CHANNEL_ID" ]; then
         curl --silent \
              --max-time 30 \
-             --request POST https://api.telegram.org/bot$AUTH_TOKEN/sendMessage \
+             --request POST "https://api.telegram.org/bot${AUTH_TOKEN}/sendMessage" \
              --data parse_mode=HTML \
              --data disable_web_page_preview=true \
              --data chat_id="$CHANNEL_ID" \
@@ -232,7 +232,7 @@ function catch()
 
     logTrace "${@:3}" >&2
 
-    eval "$( ( eval ${@:3} ) 2> >(___EVALX_STDERR=$(cat);declare -p ___EVALX_STDERR) 1> >(___EVALX_STDOUT=$(cat);declare -p ___EVALX_STDOUT))"
+    eval "$( ( eval "${@:3}" ) 2> >(___EVALX_STDERR=$(cat);declare -p ___EVALX_STDERR) 1> >(___EVALX_STDOUT=$(cat);declare -p ___EVALX_STDOUT))"
     
     STDOUT="$___EVALX_STDOUT"
     STDERR="$___EVALX_STDERR"

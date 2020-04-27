@@ -1,11 +1,11 @@
 #!/bin/bash
 
-. $(dirname $0)/cardano-utils-common
+. "$(dirname "$0")/cardano-utils-common"
 
 
 function showHelp() {
     cat <<EOF
-usage: $(basename $0) [-i INTERVAL] [-p POOLID] [-u USERID] [-g GENESISPREF] [-e ENCLAVE] [-D] [-C] [-T] [-B]
+usage: $(basename "$0") [-i INTERVAL] [-p POOLID] [-u USERID] [-g GENESISPREF] [-e ENCLAVE] [-D] [-C] [-T] [-B]
       [-L LOG_LEVEL] [-j] [-h]
   -i  Interval that will be used for regular checking.
       If not specified then send info only once and exit.
@@ -33,8 +33,8 @@ EOF
 while getopts 'i:p:k:e:c:DL:jh' c
 do
     case $c in
-        i) INTERVAL=$(printf "%s" $OPTARG | parseInterval)
-           if [ -z $INTERVAL ] || (( INTERVAL < 0 )); then
+        i) INTERVAL=$(printf "%s" "$OPTARG" | parseInterval)
+           if [ -z "$INTERVAL" ] || (( INTERVAL < 0 )); then
                logError 'Wrong value for option `-r`' >&2
                showHelp >&2
                exit 1
@@ -55,7 +55,7 @@ do
                exit 1
            fi
            MANUAL_SLOTS_COUNT="$OPTARG";;
-        L) if ! parseLogLevel $OPTARG; then
+        L) if ! parseLogLevel "$OPTARG"; then
                logError 'Wrong value for option `-L`' >&2
                showHelp >&2
                exit 1
@@ -91,7 +91,6 @@ if [ -n "$show_help" ]; then
 fi
 
 
-CURRENT_EPOCH=
 LAST_REPORTED_EPOCH=
 LAST_SLOTS_COUNT_REPORT_TRY_TIME=
 
@@ -117,7 +116,7 @@ function fetchLeadersLogs {
     logDebug "$ENCLAVE_LEADER_ID" >&2
     local ENCLAVE_JSON="true"
     if [ -n "$ENCLAVE_LEADER_ID" ]; then
-        ENCLAVE_JSON=$(printf '.enclave_leader_id==%d' $ENCLAVE_LEADER_ID)
+        ENCLAVE_JSON=$(printf '.enclave_leader_id==%d' "$ENCLAVE_LEADER_ID")
     fi
 
     local JSON ERR_MSG
@@ -128,7 +127,7 @@ function fetchLeadersLogs {
     fi
     logDebug "${ENCLAVE_JSON}" >&2
     if [ -n "$JSON" ]; then
-        echo -n $JSON | \
+        echo -n "$JSON" | \
             jq -c "[( .[] | select(${ENCLAVE_JSON}) )]"
     fi
 }
@@ -159,7 +158,7 @@ function sendSlotsCountToAdastat {
                        --arg ASSIGNED "$SLOTS_COUNT" \
                        '{pool: $POOLID, epoch: $EPOCH, blocks: $ASSIGNED}'
           )
-    local SIGNATURE=$(echo -n "$PAYLOAD" | jcli key sign --secret-key $POOL_KES_PRIVATE_KEY_FILE)
+    local SIGNATURE=$(echo -n "$PAYLOAD" | jcli key sign --secret-key "$POOL_KES_PRIVATE_KEY_FILE")
 
     logInfo "Sending count of assigned slots to adastat.net"
     logInfo "Request payload: $PAYLOAD"
@@ -182,10 +181,10 @@ function doOnce {
     if [ -z "$nodeStatsJson" ]; then
         return 1
     fi
-    local epoch=$(echo -n $nodeStatsJson | getCurrentEpoch)
-    if is_number $epoch; then
+    local epoch=$(echo -n "$nodeStatsJson" | getCurrentEpoch)
+    if is_number "$epoch"; then
         if [ -n "$MANUAL_SLOTS_COUNT" ]; then
-            sendSlotsCountToAdastat $epoch $MANUAL_SLOTS_COUNT
+            sendSlotsCountToAdastat "$epoch" "$MANUAL_SLOTS_COUNT"
             exit 0
         else
             if [ -n "$LAST_REPORTED_EPOCH" ] || [ -n "$WITH_SLOTS_COUNT_REPORT_ON_START" ]; then
@@ -201,7 +200,7 @@ function doOnce {
                             local leadersLogs=$(fetchLeadersLogs | filterLeadersLogsByEpoch "$epoch")
                             local -i slotsCount=$(echo -n "$leadersLogs" | jq -r '. | length')
                             LAST_SLOTS_COUNT_REPORT_TRY_TIME=$(date +%s)
-                            if is_number $slotsCount; then
+                            if is_number "$slotsCount"; then
                                 if (( $slotsCount > 0 )) || (( tryCount >= 6 )); then
                                     sendSlotsCountToAdastat "$epoch" "$slotsCount" \
                                         && LAST_REPORTED_EPOCH="$epoch" \

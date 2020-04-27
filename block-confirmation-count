@@ -1,12 +1,12 @@
 #!/bin/bash
 
-. $(dirname $0)/cardano-utils-common
+. "$(dirname "$0")/cardano-utils-common"
 
 DEFAULT_MAX_COUNT=20
 
 function showHelp() {
     cat <<EOF
-usage: $(basename $0) [-m MAXCOUNT] [-h] BLOCK_ID
+usage: $(basename "$0") [-m MAXCOUNT] [-h] BLOCK_ID
   -m  Do not count confirmations after this one. Default value is ${DEFAULT_MAX_COUNT}.
   -n  Print only number.
   -h  Show this help.
@@ -20,7 +20,7 @@ MAX_COUNT=$DEFAULT_MAX_COUNT
 while getopts 'm:L:nh' c
 do
     case $c in
-        m) if ! is_number $OPTARG; then
+        m) if ! is_number "$OPTARG"; then
                logError 'Wrong value for option `-m`' >&2
                showHelp >&2;
                exit 1
@@ -28,7 +28,7 @@ do
            MAX_COUNT=$OPTARG
            ;;
         n) ONLY_NUMBER="yes" ;;
-        L) if ! parseLogLevel $OPTARG; then
+        L) if ! parseLogLevel "$OPTARG"; then
                logError 'Wrong value for option `-L`' >&2
                showHelp >&2
                exit 1
@@ -62,7 +62,7 @@ if [ -n "$ERR_MSG" ]; then
 fi
 
 if [ -n "$ONLY_NUMBER" ]; then
-    printf "%d" $COUNT
+    printf "%d" "$COUNT"
 else
     echo "Confirmation blocks count: $COUNT"
 fi

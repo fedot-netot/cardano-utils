@@ -1,6 +1,6 @@
 #!/bin/bash
 
-. $(dirname $0)/cardano-utils-common
+. "$(dirname "$0")/cardano-utils-common"
 
 # Default value of command which output will be sent to the log
 DEFAULT_REPORT_CMD='jcli rest v0 node stats get; echo "\nNeigbors: $(netstat -tnp 2> /dev/null| grep -E ''ESTABLISHED.+jormungandr'' | cut -c45-65 | sort | uniq | wc -l)"'
@@ -8,7 +8,7 @@ DEFAULT_REPORT_CMD='jcli rest v0 node stats get; echo "\nNeigbors: $(netstat -tn
 
 function showHelp() {
     cat <<EOF
-usage: $(basename $0) [-i INTERVAL] [-a TELEGRAM_ACCESS_TOKEN] [-c CHANNEL_ID] [-n HEADER]
+usage: $(basename "$0") [-i INTERVAL] [-a TELEGRAM_ACCESS_TOKEN] [-c CHANNEL_ID] [-n HEADER]
          [-x COMMAND] -h
   -i  Interval  that will be used for regular sending.
       If not specified then send info only once and exit.
@@ -44,8 +44,8 @@ do
     case $c in
         n) POOL_LABEL="$OPTARG" ;;
         x) REPORT_CMD="$OPTARG" ;;
-        i) INTERVAL=$(printf "%s" $OPTARG | parseInterval)
-           if [ -z $INTERVAL ] || (( INTERVAL < 0 )); then
+        i) INTERVAL=$(printf "%s" "$OPTARG" | parseInterval)
+           if [ -z "$INTERVAL" ] || (( INTERVAL < 0 )); then
                logError 'Wrong value for option `-r`' >&2
                showHelp >&2
                exit 1
@@ -53,7 +53,7 @@ do
            ;;
         a) T_AUTH_TOKEN="$OPTARG" ;;
         c) T_CHANNEL_IDS[${#T_CHANNEL_IDS[*]}]="$OPTARG" ;;
-        L) if ! parseLogLevel $OPTARG; then
+        L) if ! parseLogLevel "$OPTARG"; then
                logError 'Wrong value for option `-L`' >&2
                showHelp >&2
                exit 1
@@ -77,7 +77,7 @@ if (( ${#T_CHANNEL_IDS[*]} > 0 )) && [ -n "$T_AUTH_TOKEN" ]; then
     done
 fi
 echo -e "${POOL_LABEL:+${POOL_LABEL}\n}$REPORT"
-if [ -z $INTERVAL ]; then
+if [ -z "$INTERVAL" ]; then
     exit 0
 fi
 sleep "${INTERVAL}m"

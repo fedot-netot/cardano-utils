@@ -1,11 +1,11 @@
 #!/bin/bash
 
-. $(dirname $0)/cardano-utils-common
+. "$(dirname "$0")/cardano-utils-common"
 
 
 function showHelp() {
     cat <<EOF
-usage: $(basename $0) [-i INTERVAL] [-e ENCLAVE] [-d] [-C] [-S] [-E] [-F] [-b SLOT]
+usage: $(basename "$0") [-i INTERVAL] [-e ENCLAVE] [-d] [-C] [-S] [-E] [-F] [-b SLOT]
           [-a TELEGRAM_ACCESS_TOKEN] [-c CHANNEL_ID] [-n HEADER] [-f FILE]
           [-L LOG_LEVEL] [-j] [-h]
   -i  Interval that will be used for regular checking.
@@ -29,7 +29,7 @@ usage: $(basename $0) [-i INTERVAL] [-e ENCLAVE] [-d] [-C] [-S] [-E] [-F] [-b SL
       If defined it will be the first line of every telegram message.
   -f  Path to \`blocks.sqlite\` file with blockchain database. Mandatory if competition buttles info needed
       in report.
-  -x  Preffered block explorer when making block and pool links. Must be one of `iohk`, `adastat` (default).
+  -x  Preffered block explorer when making block and pool links. Must be one of \`iohk\`, \`adastat\` (default).
   -L  Log level. One of the values \`error\`, \`warn\`, \`info\`, \`debug\`, \`trace\`. Only messages with
       this and stronger severity level will be logged.
   -j  Prepare messages for journald severity levels.
@@ -47,7 +47,6 @@ EOF
 declare -a T_CHANNEL_IDS=()
 # Access token for Telegram Bot API
 T_AUTH_TOKEN=$TELEGRAM_BOT_AUTH_TOKEN
-EXPLORER=adastat
 
 while getopts 'e:n:i:a:c:f:L:x:b:CSEFdjh' c
 do
@@ -59,8 +58,8 @@ do
            fi
            ENCLAVE_LEADER_ID[${#ENCLAVE_LEADER_ID[*]}]="$OPTARG" ;;
         n) POOL_NAME="$OPTARG" ;;
-        i) INTERVAL=$(printf "%s" $OPTARG | parseInterval)
-           if [ -z $INTERVAL ] || (( INTERVAL < 0 )); then
+        i) INTERVAL=$(printf "%s" "$OPTARG" | parseInterval)
+           if [ -z "$INTERVAL" ] || (( INTERVAL < 0 )); then
                logError 'Wrong value for option `-r`' >&2
                showHelp >&2
                exit 1
@@ -75,13 +74,13 @@ do
                exit 1
            fi
            ;;
-        L) if ! parseLogLevel $OPTARG; then
+        L) if ! parseLogLevel "$OPTARG"; then
                logError 'Wrong value for option `-L`' >&2
                showHelp >&2
                exit 1
            fi
            ;;
-        x) if ! parseExplorerType $OPTARG; then
+        x) if ! parseExplorerType "$OPTARG"; then
                logError 'Wrong value for option `-x`' >&2
                showHelp >&2
                exit 1
@@ -159,7 +158,7 @@ function fetchLeadersLogs {
 
     local ENCLAVE_JSON=true
     if (( ${#ENCLAVE_LEADER_ID[*]} > 0 )); then
-        local ENCLAVE_JSON_=$(printf ' or (.enclave_leader_id==%d)' ${ENCLAVE_LEADER_ID[*]})
+        local ENCLAVE_JSON_=$(printf ' or (.enclave_leader_id==%d)' "${ENCLAVE_LEADER_ID[@]}")
         ENCLAVE_JSON_=${ENCLAVE_JSON_:4}
         ENCLAVE_JSON=${ENCLAVE_JSON_:-true}
     fi
@@ -171,7 +170,7 @@ function fetchLeadersLogs {
         return 1
     fi
     if [ -n "$JSON" ]; then
-        echo -n $JSON | \
+        echo -n "$JSON" | \
             jq "[( .[] | select(${ENCLAVE_JSON}) )] | sort_by(.scheduled_at_time | strptime(\"%Y-%m-%dT%H:%M:%S%z\") | mktime)"
     fi
 }
@@ -280,12 +279,12 @@ order by epoch, slot, pool
     "
 
     local idx=0
-    for record in $(echo "$sql1" | sqlite3 $dbFile -list)
+    for record in $(echo "$sql1" | sqlite3 "$dbFile" -list)
     do
-        local -l block=$(echo -n $record | cut -d'|' -f1)
-        local epoch=$(echo -n $record | cut -d'|' -f2)
-        local slot=$(echo -n $record | cut -d'|' -f3)
-        local -l pool=$(echo -n $record | cut -d'|' -f4)
+        local -l block=$(echo -n "$record" | cut -d'|' -f1)
+        local epoch=$(echo -n "$record" | cut -d'|' -f2)
+        local slot=$(echo -n "$record" | cut -d'|' -f3)
+        local -l pool=$(echo -n "$record" | cut -d'|' -f4)
         [ -n "$___BLOCK_IDS" ] && eval "$___BLOCK_IDS[$idx]='$block'"
         [ -n "$___POOL_IDS" ] && eval "$___POOL_IDS[$idx]='$pool'"
         [ -n "$___EPOCHS" ] && eval "$___EPOCHS[$idx]='$epoch'"
@@ -306,8 +305,8 @@ function printCompetitiveButtles {
     local blockJson=$3
 
     if [ -z "$WO_BLOCK_CREATION_COMPETITION" ]; then
-        local BLOCK_ID=$(echo -n $blockJson | jq -rc '.status.Block.block')
-        local HEIGHT=$(echo -n $blockJson | jq -rc '.status.Block.chain_length')
+        local BLOCK_ID=$(echo -n "$blockJson" | jq -rc '.status.Block.block')
+        local HEIGHT=$(echo -n "$blockJson" | jq -rc '.status.Block.chain_length')
 
         local -a BLOCK_IDS=()
         local -a POOL_IDS=()
@@ -342,9 +341,9 @@ function printBlockSuccess {
     local SIMPLE_LOGGING=$1
     local blockJson=$2
 
-    local BLOCK_ID=$(echo -n $blockJson | jq -rc '.status.Block.block')
-    local SLOT=$(echo -n $blockJson | jq -rc '.scheduled_at_date')
-    local HEIGHT=$(echo -n $blockJson | jq -rc '.status.Block.chain_length')
+    local BLOCK_ID=$(echo -n "$blockJson" | jq -rc '.status.Block.block')
+    local SLOT=$(echo -n "$blockJson" | jq -rc '.scheduled_at_date')
+    local HEIGHT=$(echo -n "$blockJson" | jq -rc '.status.Block.chain_length')
 
     if [ "$SIMPLE_LOGGING" == "yes" ]; then
         logNotice "Slot <b><i>$SLOT</i></b> $(qs)SUCCEEDED$(qe): block <a href=\"$(getExplorerUrl block "$BLOCK_ID")\">$BLOCK_ID</a> was successfully produced at height <b><i>$HEIGHT</i></b>."
@@ -359,9 +358,9 @@ function printBlockFailFork {
     local SIMPLE_LOGGING=$1
     local blockJson=$2
 
-    local BLOCK_ID=$(echo -n $blockJson | jq -rc '.status.Block.block')
-    local SLOT=$(echo -n $blockJson | jq -rc '.scheduled_at_date')
-    local HEIGHT=$(echo -n $blockJson | jq -rc '.status.Block.chain_length')
+    local BLOCK_ID=$(echo -n "$blockJson" | jq -rc '.status.Block.block')
+    local SLOT=$(echo -n "$blockJson" | jq -rc '.scheduled_at_date')
+    local HEIGHT=$(echo -n "$blockJson" | jq -rc '.status.Block.chain_length')
 
     if [ "$SIMPLE_LOGGING" == "yes" ]; then
         logNotice "Slot <b><i>$SLOT</i></b> $(qs)FAILED$(qe): block <a href=\"$(getExplorerUrl block "$BLOCK_ID")\">$BLOCK_ID</a> at height <b><i>$HEIGHT</i></b> got into a competitive fork that lost."
@@ -376,8 +375,8 @@ function printBlockFail {
     local SIMPLE_LOGGING=$1
     local blockJson=$2
 
-    local SLOT=$(echo -n $blockJson | jq -rc '.scheduled_at_date')
-    local REASON=$(echo -n $blockJson | jq -rc '..|.reason?|select(length > 0)')
+    local SLOT=$(echo -n "$blockJson" | jq -rc '.scheduled_at_date')
+    local REASON=$(echo -n "$blockJson" | jq -rc '..|.reason?|select(length > 0)')
 
     local DEFAULT_REASON="unfortunately the attempt to create a block failed"
 
@@ -435,16 +434,16 @@ function makeCreatedBlocksReports {
     local nodeStatsJson=$1
     local leadersLogsJson=$2
 
-    local lastBlockHeight=$(echo -n $nodeStatsJson | getLastBlockHeight)
+    local lastBlockHeight=$(echo -n "$nodeStatsJson" | getLastBlockHeight)
     for blockJson in "${!POSTPONED_BLOCKS[@]}"
     do
-        makeOneCreatedBlockReport "$lastBlockHeight" "$blockJson" && unset 'POSTPONED_BLOCKS[$blockJson]' || POSTPONED_BLOCKS["$blockJson"]=1
+        makeOneCreatedBlockReport "$lastBlockHeight" "$blockJson" && unset 'POSTPONED_BLOCKS["$blockJson"]' || POSTPONED_BLOCKS["$blockJson"]=1
     done
 
     readarray -t blocksJson < <(getNewBlocks "$PREVIOUS_LEADERS_JSON" "$leadersLogsJson")
     for blockJson in "${blocksJson[@]}"
     do
-        makeOneCreatedBlockReport "$lastBlockHeight" "$blockJson" && unset 'POSTPONED_BLOCKS[$blockJson]' || POSTPONED_BLOCKS["$blockJson"]=1
+        makeOneCreatedBlockReport "$lastBlockHeight" "$blockJson" && unset 'POSTPONED_BLOCKS["$blockJson"]' || POSTPONED_BLOCKS["$blockJson"]=1
     done
 }
 
@@ -532,19 +531,19 @@ function makeNewEpochReport {
     local nodeStatsJson="$1"
     local epochLeadersLogsJson="$2"
 
-    local -i epoch=$(echo -n $nodeStatsJson | getCurrentEpoch)
-    local -i slot=$(echo -n $nodeStatsJson | getCurrentSlot)
-    local -i uptime=$(echo -n $nodeStatsJson | jq -r '.uptime')
+    local -i epoch=$(echo -n "$nodeStatsJson" | getCurrentEpoch)
+    local -i slot=$(echo -n "$nodeStatsJson" | getCurrentSlot)
+    local -i uptime=$(echo -n "$nodeStatsJson" | jq -r '.uptime')
 
-    local count=$(echo -n $epochLeadersLogsJson | getCountOfSlots)
-    if is_number $count; then
+    local count=$(echo -n "$epochLeadersLogsJson" | getCountOfSlots)
+    if is_number "$count"; then
         # We may be shure that slots schedule is already known to our node
         # when enough time was elapsed from the epoch start or node start.
         if (( $slot > 20 )) && (( $uptime > 200 )); then
           CURRENT_EPOCH=$epoch
           CURRENT_EPOCH_BLOCK_COUNT=$count
-          SCHEDULED_AT_TIME_ARR=( $(echo -n $epochLeadersLogsJson | getScheduledTimes) )
-          SCHEDULED_AT_DATE_ARR=( $(echo -n $epochLeadersLogsJson | getScheduledDates) )
+          SCHEDULED_AT_TIME_ARR=( $(echo -n "$epochLeadersLogsJson" | getScheduledTimes) )
+          SCHEDULED_AT_DATE_ARR=( $(echo -n "$epochLeadersLogsJson" | getScheduledDates) )
           printNewEpochReport "no"
           if [ -n "$T_AUTH_TOKEN" ] && (( ${#T_CHANNEL_IDS[*]} > 0 )); then
               printNewEpochReport "yes" | sendToTelegram
@@ -563,10 +562,10 @@ function doOnce {
     if [ -z "$nodeStatsJson" ]; then
         return 1
     fi
-    local epoch=$(echo -n $nodeStatsJson | getCurrentEpoch)
-    if is_number $epoch; then
+    local epoch=$(echo -n "$nodeStatsJson" | getCurrentEpoch)
+    if is_number "$epoch"; then
         local leadersLogsJson=$(fetchLeadersLogs)
-        local epochLeadersLogsJson=$(echo -n $leadersLogsJson | getLeadersLogsForEpoch $epoch)
+        local epochLeadersLogsJson=$(echo -n "$leadersLogsJson" | getLeadersLogsForEpoch $epoch)
         logTrace "$epochLeadersLogsJson" >&2
 
         makeNewEpochReport "$nodeStatsJson" "$epochLeadersLogsJson"
