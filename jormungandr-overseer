@@ -315,8 +315,12 @@ function isRunningState {
 function readJormungandrState {
     unset state lastBlockTime lastReceivedBlockTime uptime
 
+
     local JSON ERR_MSG
     catch JSON ERR_MSG "curl -m 5 -sSf $JORMUNGANDR_RESTAPI_URL/v0/node/stats"
+
+    CONNECTIONS=$(netstat -tnp 2>/dev/null| grep -E 'ESTABLISHED.+jormungandr' | cut -c45-65 | sort | uniq | wc -l)
+    CHECK_DATE=$(date +%s)
 
     if [ -n "$ERR_MSG" ]; then
         logError "$ERR_MSG" >&2
@@ -331,8 +335,6 @@ function readJormungandrState {
     if is_number "$uptime"; then
         LAST_REGISTERED_UPTIME="$uptime"
     fi
-    CONNECTIONS=$(netstat -tnp 2>/dev/null| grep -E 'ESTABLISHED.+jormungandr' | cut -c45-65 | sort | uniq | wc -l)
-    CHECK_DATE=$(date +%s)
 }
 
 function sendToTelegram {
