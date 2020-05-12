@@ -579,7 +579,7 @@ do
                 startJormungandr
             fi;
         elif isCriticalLag "$CHECK_DATE" "$PREV_CHECK_DATE" "$CRITICAL_REST_ERROR_DURATION"; then
-            alert "Starting jormungandr because it not responding last $(printInterval "$CRITICAL_LAG_IN_SEC" no)."
+            alert "Starting jormungandr because it not responding last $(printInterval "$CRITICAL_REST_ERROR_DURATION" no)."
             stopJormungandr
             startJormungandr
         fi
