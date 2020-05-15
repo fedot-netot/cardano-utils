@@ -323,6 +323,7 @@ function doOnce {
                     local currentTime=$(date +%s)
                     if (( $currentTime > (${LAST_SLOTS_COUNT_REPORT_TRY_TIME:-0} + 300) )); # Try not more than once every 5 minutes
                     then
+                        local -i maxTryCount=10
                         local -i tryCount=0
                         local slotsCount=0
                         while true
@@ -332,13 +333,13 @@ function doOnce {
                             local -i slotsCount=$(echo -n "$leadersLogs" | jq -r '. | length')
                             LAST_SLOTS_COUNT_REPORT_TRY_TIME=$(date +%s)
                             if is_number "$slotsCount"; then
-                                if (( $slotsCount > 0 )) || (( tryCount >= 6 )); then
+                                if (( $slotsCount > 0 )) || (( tryCount > maxTryCount )); then
                                     sendSlotsToPoolTool "$epoch" "$slotsCount" "$leadersLogs" \
                                         && LAST_REPORTED_EPOCH="$epoch" \
                                         && break
                                 fi
                             fi
-                            (( tryCount >= 6 )) && break
+                            (( tryCount > maxTryCount )) && break
                             sleep 10
                         done
                         if (( $epoch != ${LAST_REPORTED_EPOCH:-0} )); then
