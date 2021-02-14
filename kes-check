@@ -1,47 +1,125 @@
 #!/bin/bash
 
+. "$(dirname "$0")/cardano-utils-common"
+
+function showHelp() {
+    cat <<EOF
+usage: $(basename "$0") [-c] [-s] [-k KESPERIOD] [-g GENESYSFILE] [-u] [-h]
+  -o  Print KES information for stake pool operational certificate creation.
+  -c  Print number of current KES period.
+  -s  Print start time and number of the first KES period of the Shelley era.
+  -k  Print start time of this KESPERIOD period.
+  -K  Print start time of this KESPERIOD period as sconds count since the unix epoch (1970).
+  -u  Give all time values in UTC time zone.
+  -g  Path to Genesis file. If not defined then value from environment variable \$genesisfile will be used.
+  -h  Show this help.
+
+This script prints KES periods info. If none of \`-o\`, \`-c\`, \`-s\` or \`-k\` options are specified then default \`-c\` will be assumed.
+EOF
+}
+
+while getopts 'ocsk:K:g:uh' c
+do
+    case $c in
+        o) printCert=1 ;;
+        c) printCurrentKES=1 ;;
+        s) printShelleyStart=1 ;;
+        K) printUnixTime=1
+           if ! is_number "$OPTARG"; then
+               logError 'Wrong value for option `-K`' >&2
+               showHelp >&2
+               exit 1
+           fi
+           printKesPeriodStart="$OPTARG" ;;
+        k) if ! is_number "$OPTARG"; then
+               logError 'Wrong value for option `-k`' >&2
+               showHelp >&2
+               exit 1
+           fi
+           printKesPeriodStart="$OPTARG" ;;
+        u) useUTC=1 ;;
+        g) genesisfile="$OPTARG" ;;
+        h) showHelp; exit 0 ;;
+        ?) showHelp >&2; exit 1 ;;
+    esac
+done
+
+if [ "$printCert" == "" ] \
+       && [ "$printShelleyStart" == "" ] \
+       && [ "$printKesPeriodStart" == "" ] \
+       && [ "$printCurrentKES" == "" ] \
+   ; then
+    printCurrentKES=1
+fi
+
 genesisfile="${genesisfile:-$HOME/wrk/cardano/cardano-node/.my/mainnet/shelley-genesis.json}"
 
 if [ ! -f $genesisfile ]; then
-    echo "File does not exists: $genesisfile"
+    logError "File does not exists: $genesisfile" >&2
     exit 1
 fi
 
-#Calculating current KES-Period
-startTimeGenesis=$(cat ${genesisfile} | jq -r .systemStart)
-startTimeSec=$(date --date=${startTimeGenesis} +%s)     
+function unixTimeToStr {
+    local unixTime=$1
+    if [ "$1" == "" ]; then
+        unixTime=$(cat)
+    fi
+    if (( useUTC )); then
+        date -u --date=@${unixTime} '+%Y-%m-%dT%H:%M:%SZ'
+    else
+        date --date=@${unixTime} '+%Y-%m-%dT%H:%M:%S %:z'
+    fi
+}
+
+currentTime=$(date -u +%s)
+
+systemStartTime=$(date --date=$(cat ${genesisfile} | jq -r .systemStart) +%s)
 
 MAINNET_NETWORK_MAGIG='764824073'
 MAINNET_SHELLEY_START='2020-07-29T21:46:31Z'
 networkMagic=$(cat ${genesisfile} | jq -r .networkMagic)
-
 if [ "$networkMagic" == "$MAINNET_NETWORK_MAGIG" ]
 then
-    startTimeShelleyInMainnetSec=$(date --date="$MAINNET_SHELLEY_START" +%s)
+    shelleyStartTime=$(date --date="$MAINNET_SHELLEY_START" +%s)
 else
-    startTimeShelleyInMainnetSec=$startTimeSec
+    shelleyStartTime=$systemStartTime
 fi
 
-slotsCountInByronEra=$(( ( startTimeShelleyInMainnetSec - startTimeSec ) / 20 ))
-
-currentTimeSec=$(date -u +%s)                          
+slotsCountInByronEra=$(( ( shelleyStartTime - systemStartTime ) / 20 ))
 slotsPerKESPeriod=$(cat ${genesisfile} | jq -r .slotsPerKESPeriod)
 slotLength=$(cat ${genesisfile} | jq -r .slotLength)
-currentKESperiod=$(( (${currentTimeSec}-${startTimeSec}) / (${slotsPerKESPeriod}*${slotLength}) ))
 
 
-shelleyStartFromKESPeriod=$(( (slotsCountInByronEra ) / slotsPerKESPeriod +1 ))
-
-slotsCountAfterByronEra=$(( ( currentTimeSec - startTimeShelleyInMainnetSec ) / slotLength ))
+shelleyStartKESPeriod=$(( (slotsCountInByronEra ) / slotsPerKESPeriod +1 ))
+slotsCountAfterByronEra=$(( ( currentTime - shelleyStartTime ) / slotLength ))
 currentKESperiod=$(( (slotsCountInByronEra + slotsCountAfterByronEra ) / slotsPerKESPeriod ))
 
+# The Shelley era started not at the border of KES periods. Some KES period was started in the Byron era
+# and ended in the Shelley era. Count the number of slots of this KES period that was in the Shelley era.
+iDoNotKnowWhyThisShiftExists=12*60*60 # 12 hour shift
+remainingSlotsFromByronEra=$(( slotsCountInByronEra - (slotsPerKESPeriod * (slotsCountInByronEra / slotsPerKESPeriod)) - iDoNotKnowWhyThisShiftExists))
 
-#Calculating Expire KES Period and Date/Time
-maxKESEvolutions=$(cat ${genesisfile} | jq -r .maxKESEvolutions)
-expiresKESperiod=$(( ${currentKESperiod} + ${maxKESEvolutions} ))
-expireTimeSec=$(( ${startTimeShelleyInMainnetSec} + (${slotLength}*${expiresKESperiod}*${slotsPerKESPeriod}) ))
-expireDate=$(date --date=@${expireTimeSec} +%Y-%m-%dT%H-%M-%S)
+if (( printShelleyStart )); then
+    echo -e "Shelley started at $(unixTimeToStr $shelleyStartTime) with ${shelleyStartKESPeriod} KES period"
+fi
 
-echo -e "Current KES Period: ${currentKESperiod}"
-echo -e "KES Keys expire after Period: ${expiresKESperiod} (${expireDate})"
-echo -e "Shelley started at ${MAINNET_SHELLEY_START} with ${shelleyStartFromKESPeriod} KES period"
+if (( printCurrentKES )); then
+    echo -e "Current KES Period: ${currentKESperiod}"
+fi
+
+if (( printCert )); then
+    maxKESEvolutions=$(cat ${genesisfile} | jq -r .maxKESEvolutions)
+    expiresKESperiod=$(( currentKESperiod + maxKESEvolutions ))
+    expireTime=$(( shelleyStartTime + ( slotLength*(slotsPerKESPeriod*(expiresKESperiod + 1 - shelleyStartKESPeriod) + remainingSlotsFromByronEra) ) ))
+
+    echo -e "Operational cert generated with ${currentKESperiod} start KES period will expire after Period: ${expiresKESperiod} ($(unixTimeToStr $expireTime))"
+fi
+
+if (( printKesPeriodStart )); then
+    startKesPeriodTime=$(( shelleyStartTime + ( slotLength*(slotsPerKESPeriod*(printKesPeriodStart - shelleyStartKESPeriod) + remainingSlotsFromByronEra) ) ))
+    if (( printUnixTime )); then
+        echo -e "$startKesPeriodTime"
+    else
+        echo -e "KES period ${printKesPeriodStart} starts at $(unixTimeToStr $startKesPeriodTime)"
+    fi
+fi
